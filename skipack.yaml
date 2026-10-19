@@ -12,8 +12,6 @@ groups:
       skill: surgical-patch
     - source: https://github.com/obra/superpowers/tree/main/skills/test-driven-development
     - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
-    - source: JuliusBrussee/caveman
-      skill: verify-and-stop
 
   reflex-lite:
     - source: JuliusBrussee/caveman
@@ -28,6 +26,19 @@ groups:
       skill: frontend-design
     - source: vercel-labs/agent-skills
       skill: web-design-guidelines
+
+  design-pro:
+    - source: vercel-labs/open-agents
+      skill: frontend-design
+
+    - source: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/.claude/skills/ui-ux-pro-max
+
+    - source: https://github.com/wshobson/agents/tree/main/plugins/frontend-mobile-development/skills/tailwind-design-system
+
+    - source: vercel-labs/agent-skills
+      skill: web-design-guidelines
+
+    - source: https://github.com/wshobson/agents/tree/main/plugins/ui-design/skills/responsive-design
 
   tailwind:
     - source: https://github.com/wshobson/agents/tree/main/plugins/frontend-mobile-development/skills/tailwind-design-system
