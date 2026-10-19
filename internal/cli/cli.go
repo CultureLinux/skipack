@@ -11,14 +11,21 @@ import (
 	"github.com/cyklodev/skipack/internal/config"
 	gh "github.com/cyklodev/skipack/internal/github"
 	"github.com/cyklodev/skipack/internal/install"
+	"github.com/cyklodev/skipack/internal/selfupdate"
 )
 
+type SelfUpdater interface {
+	Update() error
+}
+
 type App struct {
-	Store    config.Store
-	Root     string
-	Out, Err io.Writer
-	GitHub   *gh.Client
-	Fetcher  install.Fetcher
+	Version     string
+	Store       config.Store
+	Root        string
+	Out, Err    io.Writer
+	GitHub      *gh.Client
+	Fetcher     install.Fetcher
+	SelfUpdater SelfUpdater
 }
 
 func (a App) fail(format string, args ...any) int {
@@ -54,6 +61,12 @@ func (a App) manager() install.Manager {
 	}
 	return install.Manager{Root: a.Root, Fetcher: f}
 }
+func (a App) selfUpdater() SelfUpdater {
+	if a.SelfUpdater != nil {
+		return a.SelfUpdater
+	}
+	return selfupdate.New()
+}
 func (a App) Run(args []string) int {
 	if a.Out == nil {
 		a.Out = os.Stdout
@@ -66,6 +79,31 @@ func (a App) Run(args []string) int {
 		return 0
 	}
 	switch args[0] {
+	case "self-update":
+		if len(args) == 4 && args[1] == "--replace" {
+			if err := selfupdate.Replace(args[2], args[3]); err != nil {
+				return a.fail("replace executable: %v", err)
+			}
+			return 0
+		}
+		if len(args) != 1 {
+			return a.usage()
+		}
+		if err := a.selfUpdater().Update(); err != nil {
+			return a.fail("self-update: %v", err)
+		}
+		fmt.Fprintln(a.Out, "updated skipack")
+		return 0
+	case "version", "--version":
+		if len(args) != 1 {
+			return a.usage()
+		}
+		version := a.Version
+		if version == "" {
+			version = "dev"
+		}
+		fmt.Fprintln(a.Out, version)
+		return 0
 	case "help", "-h", "--help":
 		if len(args) != 1 {
 			return a.usage()
@@ -227,6 +265,8 @@ Commands:
   delete <group>       Delete tracked skills from a group
   delete --all         Delete every skill tracked in the current project
   update               Refresh the GitHub cache, then update tracked skills
+  self-update          Replace skipack with the latest GitHub release
+  version              Show the installed skipack version
   help                 Show this help
 
 Examples:

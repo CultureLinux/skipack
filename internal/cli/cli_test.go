@@ -17,13 +17,17 @@ import (
 	projectstate "github.com/cyklodev/skipack/internal/state"
 )
 
+type selfUpdateFunc func() error
+
+func (f selfUpdateFunc) Update() error { return f() }
+
 func TestHelpShowsCommandsAndExamples(t *testing.T) {
 	var out, errs bytes.Buffer
 	a := App{Out: &out, Err: &errs}
 	if code := a.Run([]string{"help"}); code != 0 {
 		t.Fatalf("code=%d error=%q", code, errs.String())
 	}
-	for _, text := range []string{"Usage:", "Commands:", "delete <group>", "Examples:", "skipack config set https://github.com/"} {
+	for _, text := range []string{"Usage:", "Commands:", "delete <group>", "version", "Examples:", "skipack config set https://github.com/"} {
 		if !strings.Contains(out.String(), text) {
 			t.Fatalf("help does not contain %q:\n%s", text, out.String())
 		}
@@ -36,6 +40,35 @@ func TestNoArgumentsShowsHelpSuccessfully(t *testing.T) {
 		t.Fatalf("code=%d error=%q", code, errs.String())
 	}
 	if !strings.Contains(out.String(), "Usage:") {
+		t.Fatalf("output=%q", out.String())
+	}
+}
+
+func TestVersionPrintsEmbeddedVersion(t *testing.T) {
+	var out, errs bytes.Buffer
+	a := App{Version: "v1.2.3", Out: &out, Err: &errs}
+	if code := a.Run([]string{"version"}); code != 0 {
+		t.Fatalf("code=%d error=%q", code, errs.String())
+	}
+	if got := strings.TrimSpace(out.String()); got != "v1.2.3" {
+		t.Fatalf("version=%q", got)
+	}
+}
+
+func TestSelfUpdateRunsUpdater(t *testing.T) {
+	var out, errs bytes.Buffer
+	updated := false
+	a := App{Out: &out, Err: &errs, SelfUpdater: selfUpdateFunc(func() error {
+		updated = true
+		return nil
+	})}
+	if code := a.Run([]string{"self-update"}); code != 0 {
+		t.Fatalf("code=%d error=%q", code, errs.String())
+	}
+	if !updated {
+		t.Fatal("self updater was not run")
+	}
+	if !strings.Contains(out.String(), "updated skipack") {
 		t.Fatalf("output=%q", out.String())
 	}
 }

@@ -62,7 +62,7 @@ Sous Linux amd64 :
 
 ```console
 mkdir -p ~/.local/bin
-curl -fL https://github.com/cyklodev/skipack/releases/latest/download/skipack-linux-amd64 -o ~/.local/bin/skipack
+curl -fL https://github.com/CultureLinux/skipack/releases/latest/download/skipack-linux-amd64 -o ~/.local/bin/skipack
 chmod +x ~/.local/bin/skipack
 skipack help
 ```
@@ -163,6 +163,8 @@ alors mémorisé.
 | `skipack delete <groupe>` | Supprime uniquement les skills suivis de ce groupe. |
 | `skipack delete --all` | Supprime tous les skills suivis dans le projet. |
 | `skipack update` | Rafraîchit le cache GitHub puis met à jour les skills suivis. |
+| `skipack self-update` | Télécharge et installe la dernière release de skipack. |
+| `skipack version` | Affiche la version du binaire installé. |
 | `skipack help` | Affiche l’aide et des exemples. |
 
 `add` ignore tout dossier déjà présent sans le modifier. `update` prépare et
@@ -201,6 +203,21 @@ skipack update
 
 Si GitHub refuse ou interrompt le rafraîchissement, l’ancien cache et les
 skills déjà installés sont conservés.
+
+## Mise à jour de skipack
+
+La mise à jour des skills et celle du binaire sont séparées :
+
+```console
+skipack self-update
+```
+
+La commande télécharge le binaire correspondant au système et à l’architecture
+courants depuis la dernière GitHub Release, puis vérifie sa somme SHA-256 avec
+`SHA256SUMS` avant de le remplacer. Elle prend en charge Windows amd64, Linux
+amd64/arm64 et macOS amd64/arm64. Sous Windows, le remplacement se termine juste
+après la fermeture de la commande, car un exécutable en cours d’utilisation ne
+peut pas être remplacé directement.
 
 ## Sources de skills
 

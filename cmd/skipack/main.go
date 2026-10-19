@@ -8,6 +8,8 @@ import (
 	"github.com/cyklodev/skipack/internal/config"
 )
 
+var version = "dev"
+
 func main() {
 	store, err := config.DefaultStore()
 	if err != nil {
@@ -19,5 +21,5 @@ func main() {
 		fmt.Fprintln(os.Stderr, "skipack:", err)
 		os.Exit(1)
 	}
-	os.Exit(cli.App{Store: store, Root: root, Out: os.Stdout, Err: os.Stderr}.Run(os.Args[1:]))
+	os.Exit(cli.App{Version: version, Store: store, Root: root, Out: os.Stdout, Err: os.Stderr}.Run(os.Args[1:]))
 }

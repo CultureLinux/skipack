@@ -56,7 +56,7 @@ jobs:
             fi
             output="dist/skipack-${goos}-${goarch}${suffix}"
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -trimpath -ldflags="-s -w" -o "$output" ./cmd/skipack
+              go build -trimpath -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o "$output" ./cmd/skipack
           done <<'TARGETS'
           windows amd64
           linux amd64
