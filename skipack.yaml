@@ -1,4 +1,5 @@
 version: 1
+
 groups:
   reflex:
     - source: JuliusBrussee/caveman
@@ -15,3 +16,32 @@ groups:
       skill: verification-before-completion
     - source: JuliusBrussee/caveman
       skill: verify-and-stop
+
+  reflex-lite:
+    - source: JuliusBrussee/caveman
+      skill: investigate-first
+    - source: JuliusBrussee/caveman
+      skill: surgical-patch
+    - source: JuliusBrussee/caveman
+      skill: verify-and-stop
+
+  design:
+    - source: vercel-labs/open-agents
+      skill: frontend-design
+    - source: vercel-labs/agent-skills
+      skill: web-design-guidelines
+
+  tailwind:
+    - source: https://github.com/wshobson/agents/tree/main/plugins/frontend-mobile-development/skills/tailwind-design-system
+
+  testing:
+    - source: JuliusBrussee/caveman
+      skill: test-driven-development
+    - source: JuliusBrussee/caveman
+      skill: verification-before-completion
+
+  refactoring:
+    - source: JuliusBrussee/caveman
+      skill: safe-refactor
+    - source: JuliusBrussee/caveman
+      skill: surgical-patch

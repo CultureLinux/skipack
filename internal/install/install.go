@@ -19,7 +19,7 @@ type Manager struct {
 	Root    string
 	Fetcher Fetcher
 }
-type Result struct{ Installed, Skipped []string }
+type Result struct{ Installed, Deleted, Skipped []string }
 
 func LoadState(root string) (projectstate.File, error) { return projectstate.Load(root) }
 func skillName(s config.Skill) (string, error) {
@@ -81,6 +81,83 @@ func (m Manager) Add(specs []config.Skill) (Result, error) {
 			return result, err
 		}
 		result.Installed = append(result.Installed, name)
+	}
+	return result, nil
+}
+
+func (m Manager) Delete(specs []config.Skill) (Result, error) {
+	var result Result
+	st, err := projectstate.Load(m.Root)
+	if err != nil {
+		return result, err
+	}
+	tracked := make(map[string]projectstate.Skill, len(st.Skills))
+	for _, skill := range st.Skills {
+		tracked[skill.Name] = skill
+	}
+	requested := make(map[string]bool, len(specs))
+	for _, spec := range specs {
+		name, err := skillName(spec)
+		if err != nil {
+			return result, err
+		}
+		if requested[name] {
+			continue
+		}
+		requested[name] = true
+		if _, ok := tracked[name]; !ok {
+			result.Skipped = append(result.Skipped, name)
+		}
+	}
+
+	base := filepath.Join(m.Root, ".agents", "skills")
+	backupRoot := ""
+	type movedSkill struct{ source, backup string }
+	var moved []movedSkill
+	rollback := func() {
+		for i := len(moved) - 1; i >= 0; i-- {
+			_ = os.Rename(moved[i].backup, moved[i].source)
+		}
+		if backupRoot != "" {
+			_ = os.RemoveAll(backupRoot)
+		}
+	}
+
+	remaining := make([]projectstate.Skill, 0, len(st.Skills))
+	for _, skill := range st.Skills {
+		if !requested[skill.Name] {
+			remaining = append(remaining, skill)
+			continue
+		}
+		dst := filepath.Join(base, skill.Name)
+		if _, err := os.Stat(dst); err == nil {
+			if backupRoot == "" {
+				backupRoot, err = os.MkdirTemp(base, ".skipack-delete-*")
+				if err != nil {
+					return result, err
+				}
+			}
+			backup := filepath.Join(backupRoot, skill.Name)
+			if err = os.Rename(dst, backup); err != nil {
+				rollback()
+				return result, err
+			}
+			moved = append(moved, movedSkill{source: dst, backup: backup})
+		} else if !os.IsNotExist(err) {
+			rollback()
+			return result, err
+		}
+		result.Deleted = append(result.Deleted, skill.Name)
+	}
+	st.Skills = remaining
+	if err = projectstate.Save(m.Root, st); err != nil {
+		rollback()
+		return result, err
+	}
+	if backupRoot != "" {
+		if err = os.RemoveAll(backupRoot); err != nil {
+			return result, err
+		}
 	}
 	return result, nil
 }

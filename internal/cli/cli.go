@@ -62,9 +62,16 @@ func (a App) Run(args []string) int {
 		a.Err = os.Stderr
 	}
 	if len(args) == 0 {
-		return a.usage()
+		a.help(a.Out)
+		return 0
 	}
 	switch args[0] {
+	case "help", "-h", "--help":
+		if len(args) != 1 {
+			return a.usage()
+		}
+		a.help(a.Out)
+		return 0
 	case "config":
 		if len(args) == 3 && args[1] == "set" {
 			source := args[2]
@@ -146,6 +153,29 @@ func (a App) Run(args []string) int {
 			fmt.Fprintf(a.Out, "skipped %s (already exists)\n", n)
 		}
 		return 0
+	case "delete":
+		if len(args) != 2 {
+			return a.usage()
+		}
+		cfg, err := a.load()
+		if err != nil {
+			return a.fail("%v", err)
+		}
+		skills, ok := cfg.Groups[args[1]]
+		if !ok {
+			return a.fail("unknown group %q", args[1])
+		}
+		result, err := a.manager().Delete(skills)
+		if err != nil {
+			return a.fail("%v", err)
+		}
+		for _, n := range result.Deleted {
+			fmt.Fprintf(a.Out, "deleted %s\n", n)
+		}
+		for _, n := range result.Skipped {
+			fmt.Fprintf(a.Out, "skipped %s (not tracked by skipack)\n", n)
+		}
+		return 0
 	case "update":
 		if len(args) != 1 {
 			return a.usage()
@@ -160,6 +190,32 @@ func (a App) Run(args []string) int {
 	}
 }
 func (a App) usage() int {
-	fmt.Fprintln(a.Err, "usage: skipack <config set|config show|list|add|update>")
+	a.help(a.Err)
 	return 2
+}
+
+func (a App) help(w io.Writer) {
+	fmt.Fprint(w, `skipack — install and manage packs of agent skills
+
+Usage:
+  skipack <command> [arguments]
+
+Commands:
+  config set <source>  Set a local YAML file or public GitHub file as config
+  config show          Show the active configuration source
+  list                 List configured groups and skills
+  add <group>          Install every skill in a group
+  delete <group>       Delete tracked skills from a group
+  update               Update all skills tracked in the current project
+  help                 Show this help
+
+Examples:
+  skipack config set ./skipack.yaml
+  skipack config set https://github.com/owner/repo/blob/main/skipack.yaml
+  skipack list
+  skipack add reflex
+  skipack delete reflex
+
+Skills are installed in .agents/skills relative to the current directory.
+`)
 }

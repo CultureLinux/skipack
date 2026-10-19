@@ -181,3 +181,46 @@ func TestAddFetchFailureLeavesNoPartialFolder(t *testing.T) {
 		t.Fatalf("partial installation remains: %v", entries)
 	}
 }
+
+func TestDeleteRemovesOnlyTrackedSkillsFromRequestedSpecs(t *testing.T) {
+	root := t.TempDir()
+	tracked := filepath.Join(root, ".agents", "skills", "tracked")
+	manual := filepath.Join(root, ".agents", "skills", "manual")
+	for _, dir := range []string{tracked, manual} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("keep"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := projectstate.Save(root, projectstate.File{Skills: []projectstate.Skill{{Name: "tracked", Source: "a/r", Path: "skills/tracked"}}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (Manager{Root: root}).Delete([]config.Skill{
+		{Source: "a/r", Skill: "tracked"},
+		{Source: "a/r", Skill: "manual"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Deleted) != 1 || result.Deleted[0] != "tracked" {
+		t.Fatalf("deleted = %v", result.Deleted)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0] != "manual" {
+		t.Fatalf("skipped = %v", result.Skipped)
+	}
+	if _, err := os.Stat(tracked); !os.IsNotExist(err) {
+		t.Fatal("tracked skill still exists")
+	}
+	if _, err := os.Stat(filepath.Join(manual, "SKILL.md")); err != nil {
+		t.Fatal("untracked skill was removed")
+	}
+	state, err := projectstate.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Skills) != 0 {
+		t.Fatalf("state still tracks deleted skill: %#v", state)
+	}
+}

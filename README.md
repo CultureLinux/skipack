@@ -1,3 +1,5 @@
+![skipack — Pack skills. Ship focus.](assets/skipack-banner.png)
+
 # skipack
 
 Installez des groupes de skills pour vos agents de développement, directement
@@ -7,8 +9,7 @@ depuis GitHub.
 `.agents/skills/`. Elle fonctionne sans Git, Node.js ou Python et ne lance
 jamais les scripts téléchargés.
 
-> **Statut :** préversion. Le format de configuration V1 est stable, mais les
-> binaires GitHub Releases arriveront en V2.
+> **Statut :** préversion. Le format de configuration V1 est stable.
 
 ## Pourquoi skipack ?
 
@@ -20,8 +21,32 @@ jamais les scripts téléchargés.
 
 ## Installation
 
-Go 1.23 ou plus récent est nécessaire tant que les binaires précompilés ne
-sont pas publiés :
+### Binaires GitHub Releases
+
+Chaque tag `v*` publie des binaires autonomes pour Windows, Linux et macOS,
+accompagnés d’un fichier `SHA256SUMS`.
+
+Sous Windows amd64, téléchargez `skipack-windows-amd64.exe` depuis la
+[dernière release](https://github.com/cyklodev/skipack/releases/latest),
+renommez-le éventuellement en `skipack.exe`, puis placez-le dans un dossier
+présent dans votre `PATH`.
+
+Sous Linux amd64 :
+
+```console
+mkdir -p ~/.local/bin
+curl -fL https://github.com/cyklodev/skipack/releases/latest/download/skipack-linux-amd64 -o ~/.local/bin/skipack
+chmod +x ~/.local/bin/skipack
+skipack help
+```
+
+Remplacez `amd64` par `arm64` sur un système Linux ARM64. Les utilisateurs
+macOS peuvent télécharger `skipack-darwin-amd64` ou
+`skipack-darwin-arm64` selon leur processeur, puis appliquer `chmod +x`.
+
+### Installation avec Go
+
+Avec Go 1.23 ou plus récent :
 
 ```console
 go install github.com/cyklodev/skipack/cmd/skipack@latest
@@ -71,17 +96,34 @@ Les skills sont installés relativement au dossier courant :
 └── skipack-state.json
 ```
 
-## Configuration distante
+## Utiliser une configuration hébergée sur GitHub
 
-La configuration peut être un fichier public hébergé sur GitHub :
+1. Créez un fichier `skipack.yaml` dans un dépôt GitHub public.
+2. Ajoutez-y vos groupes de skills, puis validez-le sur votre branche par
+   défaut.
+3. Ouvrez le fichier sur GitHub et copiez son URL `blob`, par exemple :
 
-```console
-skipack config set https://github.com/owner/repository/blob/main/skipack.yaml
+```text
+https://github.com/owner/my-skipack-config/blob/main/skipack.yaml
 ```
 
-Les branches et tags contenant `/` sont résolus via l’API GitHub. Pour une
-configuration locale, `skipack` mémorise un chemin absolu dans le répertoire de
-configuration utilisateur du système.
+4. Enregistrez cette URL une seule fois sur votre machine :
+
+```console
+skipack config set https://github.com/owner/my-skipack-config/blob/main/skipack.yaml
+skipack config show
+skipack list
+```
+
+`skipack` relit le fichier GitHub à chaque `list` ou `add` : les changements
+validés dans le dépôt deviennent donc disponibles sans reconfigurer la CLI.
+Les branches et tags contenant `/` sont résolus via l’API GitHub.
+
+La source active est conservée dans le répertoire renvoyé par
+`os.UserConfigDir` : `%AppData%\skipack` sous Windows,
+`~/.config/skipack` sous Linux et `~/Library/Application Support/skipack` sous
+macOS. Une configuration locale est également acceptée ; son chemin absolu est
+alors mémorisé.
 
 ## Commandes
 
@@ -91,10 +133,14 @@ configuration utilisateur du système.
 | `skipack config show` | Affiche la source active. |
 | `skipack list` | Liste les groupes et leurs skills. |
 | `skipack add <groupe>` | Installe tous les skills du groupe. |
+| `skipack delete <groupe>` | Supprime uniquement les skills suivis de ce groupe. |
 | `skipack update` | Met à jour uniquement les skills suivis dans le projet. |
+| `skipack help` | Affiche l’aide et des exemples. |
 
 `add` ignore tout dossier déjà présent sans le modifier. `update` prépare et
 valide tous les téléchargements avant de remplacer les versions existantes.
+`delete` ne touche jamais aux dossiers qui ne sont pas suivis dans
+`.agents/skipack-state.json`.
 
 ## Sources de skills
 
@@ -149,12 +195,18 @@ Le projet normalise les fichiers texte en UTF-8 et leurs fins de ligne avec
 `.editorconfig` et `.gitattributes` pour conserver un comportement cohérent
 sous Windows, Linux et macOS.
 
-## Feuille de route
+## Publication d’une release
 
-La V2 prévoit :
+Le workflow GitHub Actions teste le projet sous Windows, Linux et macOS. Un tag
+`v*` déclenche ensuite la compilation des cinq binaires et crée la release :
 
-- des binaires Windows, Linux et macOS publiés dans GitHub Releases ;
-- une matrice de tests et de compilation avec GitHub Actions.
+```console
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Les artefacts publiés couvrent Windows amd64, Linux amd64/arm64 et macOS
+amd64/arm64.
 
 Les dépôts privés, la recherche sur skills.sh, les interfaces graphiques et la
 gestion des dépendances entre skills ne font pas partie de la V1.
