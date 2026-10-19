@@ -36,7 +36,7 @@ New-Item -ItemType Directory -Force "$HOME\bin" | Out-Null
 
 # Télécharger la dernière release
 Invoke-WebRequest `
-    -Uri "https://github.com/CultureLinux/skipack/releases/download/v0.1.0/skipack-windows-amd64.exe" `
+    -Uri "https://github.com/CultureLinux/skipack/releases/download/v0.1.3/skipack-windows-amd64.exe" `
     -OutFile "$HOME\bin\skipack.exe"
 
 # Ajouter le répertoire au PATH utilisateur si nécessaire
