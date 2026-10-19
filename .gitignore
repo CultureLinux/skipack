@@ -1,0 +1,28 @@
+# Go binaries and native libraries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/skipack
+/dist
+
+# Test and coverage outputs
+*.test
+*.out
+/coverage/
+
+# Build and release outputs
+/bin/
+/dist/
+
+# Local Go workspaces and caches
+go.work
+go.work.sum
+/.gocache/
+/.verify-gocache/
+/.tdd-gocache/
+/.buildcache-*/
+
+# Local skipack installation state
+/.agents

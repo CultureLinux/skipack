@@ -1,0 +1,17 @@
+version: 1
+groups:
+  reflex:
+    - source: JuliusBrussee/caveman
+      skill: caveman
+    - source: JuliusBrussee/caveman
+      skill: investigate-first
+    - source: JuliusBrussee/caveman
+      skill: safe-refactor
+    - source: JuliusBrussee/caveman
+      skill: surgical-patch
+    - source: JuliusBrussee/caveman
+      skill: test-driven-development
+    - source: JuliusBrussee/caveman
+      skill: verification-before-completion
+    - source: JuliusBrussee/caveman
+      skill: verify-and-stop
