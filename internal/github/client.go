@@ -3,13 +3,17 @@ package github
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -23,8 +27,11 @@ const maxArchiveBytes int64 = 100 << 20
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 type Client struct {
-	HTTP    *http.Client
-	APIBase string
+	HTTP      *http.Client
+	APIBase   string
+	CacheDir  string
+	Refresh   bool
+	refreshed map[string]bool
 }
 
 func NewClient() *Client {
@@ -37,10 +44,44 @@ func NewClient() *Client {
 			return errors.New("GitHub redirected to an unexpected host")
 		}
 	}
-	return &Client{HTTP: h, APIBase: "https://api.github.com"}
+	cacheDir := ""
+	if userDir, err := os.UserConfigDir(); err == nil {
+		cacheDir = filepath.Join(userDir, "skipack", "cache")
+	}
+	return &Client{HTTP: h, APIBase: "https://api.github.com", CacheDir: cacheDir, refreshed: map[string]bool{}}
 }
 
 func (c *Client) get(raw string) ([]byte, error) {
+	cachePath := c.cachePath(raw)
+	if cachePath != "" {
+		alreadyRefreshed := c.Refresh && c.refreshed[cachePath]
+		if !c.Refresh || alreadyRefreshed {
+			if b, err := os.ReadFile(cachePath); err == nil && len(b) > 0 {
+				return b, nil
+			} else if err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("read GitHub cache: %w", err)
+			}
+		}
+	}
+	b, err := c.getNetwork(raw)
+	if err != nil {
+		return nil, err
+	}
+	if cachePath != "" {
+		if err := writeCacheFile(cachePath, b); err != nil {
+			return nil, fmt.Errorf("write GitHub cache: %w", err)
+		}
+		if c.Refresh {
+			if c.refreshed == nil {
+				c.refreshed = map[string]bool{}
+			}
+			c.refreshed[cachePath] = true
+		}
+	}
+	return b, nil
+}
+
+func (c *Client) getNetwork(raw string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, raw, nil)
 	if err != nil {
 		return nil, err
@@ -63,6 +104,36 @@ func (c *Client) get(raw string) ([]byte, error) {
 		return nil, errors.New("download exceeds 100 MiB limit")
 	}
 	return b, nil
+}
+
+func (c *Client) cachePath(raw string) string {
+	if c.CacheDir == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return filepath.Join(c.CacheDir, hex.EncodeToString(sum[:])+".cache")
+}
+
+func writeCacheFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".skipack-cache-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err = tmp.Chmod(0600); err == nil {
+		_, err = tmp.Write(data)
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 func (c *Client) refs(owner, repo string) ([]string, error) {
 	var out []string

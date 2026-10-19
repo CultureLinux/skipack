@@ -1,8 +1,10 @@
 package install
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -162,6 +164,18 @@ func (m Manager) Delete(specs []config.Skill) (Result, error) {
 	return result, nil
 }
 
+func (m Manager) DeleteAll() (Result, error) {
+	st, err := projectstate.Load(m.Root)
+	if err != nil {
+		return Result{}, err
+	}
+	specs := make([]config.Skill, 0, len(st.Skills))
+	for _, skill := range st.Skills {
+		specs = append(specs, config.Skill{Source: skill.Source, Skill: skill.Name, Path: skill.Path})
+	}
+	return m.Delete(specs)
+}
+
 func (m Manager) Update() error {
 	st, err := projectstate.Load(m.Root)
 	if err != nil {
@@ -169,8 +183,9 @@ func (m Manager) Update() error {
 	}
 	base := filepath.Join(m.Root, ".agents", "skills")
 	type prepared struct {
-		s   projectstate.Skill
-		dir string
+		s     projectstate.Skill
+		dir   string
+		index int
 	}
 	all := make([]prepared, 0, len(st.Skills))
 	defer func() {
@@ -178,7 +193,7 @@ func (m Manager) Update() error {
 			os.RemoveAll(p.dir)
 		}
 	}()
-	for _, tracked := range st.Skills {
+	for index, tracked := range st.Skills {
 		tmp, err := os.MkdirTemp(base, ".skipack-update-*")
 		if err != nil {
 			return err
@@ -193,9 +208,26 @@ func (m Manager) Update() error {
 			os.RemoveAll(tmp)
 			return fmt.Errorf("prepare update %s: missing SKILL.md", tracked.Name)
 		}
+		dst := filepath.Join(base, tracked.Name)
+		if _, err = os.Stat(dst); err != nil {
+			os.RemoveAll(tmp)
+			return fmt.Errorf("tracked skill %s is missing", tracked.Name)
+		}
+		equal, err := directoriesEqual(tmp, dst)
+		if err != nil {
+			os.RemoveAll(tmp)
+			return fmt.Errorf("compare update %s: %w", tracked.Name, err)
+		}
+		if equal {
+			os.RemoveAll(tmp)
+			continue
+		}
 		tracked.Source = origin.Source
 		tracked.Path = origin.Path
-		all = append(all, prepared{tracked, tmp})
+		all = append(all, prepared{s: tracked, dir: tmp, index: index})
+	}
+	if len(all) == 0 {
+		return nil
 	}
 	type swapped struct{ dst, bak string }
 	var done []swapped
@@ -208,9 +240,6 @@ func (m Manager) Update() error {
 	for i, p := range all {
 		dst := filepath.Join(base, p.s.Name)
 		bak := dst + ".skipack-backup"
-		if _, err := os.Stat(dst); err != nil {
-			return fmt.Errorf("tracked skill %s is missing", p.s.Name)
-		}
 		if err := os.Rename(dst, bak); err != nil {
 			rollback()
 			return err
@@ -221,7 +250,7 @@ func (m Manager) Update() error {
 			return err
 		}
 		all[i].dir = ""
-		st.Skills[i] = p.s
+		st.Skills[p.index] = p.s
 	}
 	if err := projectstate.Save(m.Root, st); err != nil {
 		rollback()
@@ -231,4 +260,76 @@ func (m Manager) Update() error {
 		_ = os.RemoveAll(s.bak)
 	}
 	return nil
+}
+
+type fileSnapshot struct {
+	directory bool
+	digest    [sha256.Size]byte
+}
+
+func directoriesEqual(left, right string) (bool, error) {
+	leftFiles, err := snapshotDirectory(left)
+	if err != nil {
+		return false, err
+	}
+	rightFiles, err := snapshotDirectory(right)
+	if err != nil {
+		return false, err
+	}
+	if len(leftFiles) != len(rightFiles) {
+		return false, nil
+	}
+	for path, leftFile := range leftFiles {
+		rightFile, ok := rightFiles[path]
+		if !ok || leftFile != rightFile {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func snapshotDirectory(root string) (map[string]fileSnapshot, error) {
+	files := map[string]fileSnapshot{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == root {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		key := filepath.ToSlash(relative)
+		if entry.IsDir() {
+			files[key] = fileSnapshot{directory: true}
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("unsupported local entry %q", relative)
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		hash := sha256.New()
+		_, copyErr := io.Copy(hash, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		var digest [sha256.Size]byte
+		copy(digest[:], hash.Sum(nil))
+		files[key] = fileSnapshot{digest: digest}
+		return nil
+	})
+	return files, err
 }

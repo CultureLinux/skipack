@@ -45,6 +45,7 @@ func TestClientUsesLongestAPIResolvedRef(t *testing.T) {
 	c := NewClient()
 	c.APIBase = s.URL
 	c.HTTP = s.Client()
+	c.CacheDir = t.TempDir()
 	dst := t.TempDir() + "/skill"
 	o, err := c.Fetch(config.Skill{Source: "https://github.com/acme/repo/tree/feature/windows/skills/x"}, dst)
 	if err != nil {
@@ -68,6 +69,7 @@ func TestClientRejectsAmbiguousShortSkill(t *testing.T) {
 	c := NewClient()
 	c.APIBase = s.URL
 	c.HTTP = s.Client()
+	c.CacheDir = t.TempDir()
 	_, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "x"}, t.TempDir()+"/skill")
 	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
 		t.Fatalf("error=%v", err)
@@ -94,6 +96,7 @@ func TestClientReadsConfigWithSlashInRefThroughAPI(t *testing.T) {
 	c := NewClient()
 	c.APIBase = s.URL
 	c.HTTP = s.Client()
+	c.CacheDir = t.TempDir()
 	b, err := c.ReadConfigURL("https://github.com/acme/repo/blob/feature/windows/config/skills.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -119,6 +122,7 @@ func TestClientFetchesExactTrackedPathWithoutRediscovery(t *testing.T) {
 	c := NewClient()
 	c.APIBase = s.URL
 	c.HTTP = s.Client()
+	c.CacheDir = t.TempDir()
 	dst := filepath.Join(t.TempDir(), "skill")
 	origin, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "x", Path: "x"}, dst)
 	if err != nil {
@@ -156,6 +160,7 @@ func TestClientMissingShortSkillCreatesNoDestination(t *testing.T) {
 	c := NewClient()
 	c.APIBase = s.URL
 	c.HTTP = s.Client()
+	c.CacheDir = t.TempDir()
 	dst := filepath.Join(t.TempDir(), "skill")
 	if _, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "missing"}, dst); err == nil {
 		t.Fatal("missing skill accepted")
@@ -185,11 +190,96 @@ func TestClientTimeoutLeavesNoDestination(t *testing.T) {
 	c := NewClient()
 	c.APIBase = s.URL
 	c.HTTP = &http.Client{Timeout: 10 * time.Millisecond}
+	c.CacheDir = t.TempDir()
 	dst := filepath.Join(t.TempDir(), "skill")
 	if _, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "x"}, dst); err == nil {
 		t.Fatal("timed out request succeeded")
 	}
 	if _, err := os.Stat(dst); !os.IsNotExist(err) {
 		t.Fatal("destination created after timeout")
+	}
+}
+
+func TestClientReusesDiskCacheAcrossInstances(t *testing.T) {
+	z := archive(map[string]string{
+		"repo-sha/skills/one/SKILL.md": "one",
+		"repo-sha/skills/two/SKILL.md": "two",
+	})
+	requests := 0
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path == "/repos/acme/repo" {
+			fmt.Fprint(w, `{"default_branch":"main"}`)
+			return
+		}
+		w.Write(z)
+	}))
+	cacheDir := t.TempDir()
+	c := NewClient()
+	c.APIBase = s.URL
+	c.HTTP = s.Client()
+	c.CacheDir = cacheDir
+	if _, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "one"}, filepath.Join(t.TempDir(), "one")); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("initial requests = %d", requests)
+	}
+	s.Close()
+
+	cached := NewClient()
+	cached.APIBase = s.URL
+	cached.HTTP = s.Client()
+	cached.CacheDir = cacheDir
+	if _, err := cached.Fetch(config.Skill{Source: "acme/repo", Skill: "two"}, filepath.Join(t.TempDir(), "two")); err != nil {
+		t.Fatalf("cached fetch used network: %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("cache caused %d total requests", requests)
+	}
+}
+
+func TestClientRefreshesEachCachedResourceOnce(t *testing.T) {
+	version := "old"
+	requests := 0
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path == "/repos/acme/repo" {
+			fmt.Fprint(w, `{"default_branch":"main"}`)
+			return
+		}
+		w.Write(archive(map[string]string{
+			"repo-sha/skills/one/SKILL.md": version,
+			"repo-sha/skills/two/SKILL.md": version,
+		}))
+	}))
+	defer s.Close()
+	c := NewClient()
+	c.APIBase = s.URL
+	c.HTTP = s.Client()
+	c.CacheDir = t.TempDir()
+	first := filepath.Join(t.TempDir(), "first")
+	if _, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "one"}, first); err != nil {
+		t.Fatal(err)
+	}
+	version = "new"
+	c.Refresh = true
+	refreshed := filepath.Join(t.TempDir(), "refreshed")
+	if _, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "one"}, refreshed); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(t.TempDir(), "second")
+	if _, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "two"}, second); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 4 {
+		t.Fatalf("requests = %d, want 4 (two initial, two refresh)", requests)
+	}
+	b, err := os.ReadFile(filepath.Join(refreshed, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "new" {
+		t.Fatalf("refreshed content = %q", b)
 	}
 }

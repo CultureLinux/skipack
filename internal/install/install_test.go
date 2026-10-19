@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/cyklodev/skipack/internal/config"
 	projectstate "github.com/cyklodev/skipack/internal/state"
@@ -135,6 +136,29 @@ func TestUpdateDoesNotTouchUntrackedSkill(t *testing.T) {
 	}
 }
 
+func TestUpdateDoesNotReplaceUnchangedSkill(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "same"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := filepath.Join(root, ".agents", "skills", "one", "SKILL.md")
+	oldTime := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(manifest, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Update(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(oldTime) {
+		t.Fatalf("unchanged skill was replaced: modtime=%s", info.ModTime())
+	}
+}
+
 func TestAddRemovesPublishedSkillWhenStateCannotBeSaved(t *testing.T) {
 	root := t.TempDir()
 	m := Manager{Root: root, Fetcher: stateSabotageFetcher{root: root}}
@@ -222,5 +246,39 @@ func TestDeleteRemovesOnlyTrackedSkillsFromRequestedSpecs(t *testing.T) {
 	}
 	if len(state.Skills) != 0 {
 		t.Fatalf("state still tracks deleted skill: %#v", state)
+	}
+}
+
+func TestDeleteAllRemovesEveryTrackedSkillAndPreservesManualFolders(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"one", "two", "manual"} {
+		dir := filepath.Join(root, ".agents", "skills", name)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := projectstate.Save(root, projectstate.File{Skills: []projectstate.Skill{
+		{Name: "one", Source: "a/r", Path: "skills/one"},
+		{Name: "two", Source: "b/r", Path: "skills/two"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (Manager{Root: root}).DeleteAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Deleted) != 2 {
+		t.Fatalf("deleted = %v", result.Deleted)
+	}
+	for _, name := range []string{"one", "two"} {
+		if _, err := os.Stat(filepath.Join(root, ".agents", "skills", name)); !os.IsNotExist(err) {
+			t.Fatalf("tracked skill %q still exists", name)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".agents", "skills", "manual", "SKILL.md")); err != nil {
+		t.Fatal("manual skill was removed")
 	}
 }

@@ -70,7 +70,7 @@ func TestExtractSkillRejectsUnsafePathAnywhereInArchive(t *testing.T) {
 	}
 }
 
-func TestExtractSkillRejectsSymlinkAnywhereInArchive(t *testing.T) {
+func TestExtractSkillIgnoresSymlinkOutsideSelectedFolder(t *testing.T) {
 	var b bytes.Buffer
 	w := zip.NewWriter(&b)
 	manifest, _ := w.Create("repo-sha/skills/x/SKILL.md")
@@ -82,8 +82,25 @@ func TestExtractSkillRejectsSymlinkAnywhereInArchive(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if err := ExtractSkillZip(b.Bytes(), "skills/x", filepath.Join(t.TempDir(), "out")); err != nil {
+		t.Fatalf("unrelated symlink blocked extraction: %v", err)
+	}
+}
+
+func TestExtractSkillRejectsSymlinkInsideSelectedFolder(t *testing.T) {
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	manifest, _ := w.Create("repo-sha/skills/x/SKILL.md")
+	_, _ = manifest.Write([]byte("ok"))
+	header := &zip.FileHeader{Name: "repo-sha/skills/x/link", Method: zip.Store}
+	header.SetMode(os.ModeSymlink | 0777)
+	link, _ := w.CreateHeader(header)
+	_, _ = link.Write([]byte("../../outside"))
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := ExtractSkillZip(b.Bytes(), "skills/x", filepath.Join(t.TempDir(), "out")); err == nil {
-		t.Fatal("symlink outside selected skill accepted")
+		t.Fatal("symlink inside selected skill accepted")
 	}
 }
 

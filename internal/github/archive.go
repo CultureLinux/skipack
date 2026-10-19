@@ -42,10 +42,6 @@ func ExtractSkillZip(data []byte, skillPath, dst string) error {
 				return errors.New("archive contains unsafe path")
 			}
 		}
-		mode := f.Mode()
-		if mode&os.ModeSymlink != 0 || (!mode.IsRegular() && !mode.IsDir()) {
-			return fmt.Errorf("archive contains unsupported entry %q", f.Name)
-		}
 		if len(parts) < 2 {
 			continue
 		}
@@ -57,6 +53,10 @@ func ExtractSkillZip(data []byte, skillPath, dst string) error {
 		rel = strings.TrimPrefix(rel, "/")
 		if rel == "" {
 			continue
+		}
+		mode := f.Mode()
+		if mode&os.ModeSymlink != 0 || (!mode.IsRegular() && !mode.IsDir()) {
+			return fmt.Errorf("archive contains unsupported entry %q", f.Name)
 		}
 		if strings.Contains(rel, "\\") || filepath.IsAbs(rel) || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
 			return errors.New("archive contains unsafe path")

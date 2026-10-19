@@ -26,10 +26,37 @@ jamais les scripts téléchargés.
 Chaque tag `v*` publie des binaires autonomes pour Windows, Linux et macOS,
 accompagnés d’un fichier `SHA256SUMS`.
 
-Sous Windows amd64, téléchargez `skipack-windows-amd64.exe` depuis la
-[dernière release](https://github.com/cyklodev/skipack/releases/latest),
-renommez-le éventuellement en `skipack.exe`, puis placez-le dans un dossier
-présent dans votre `PATH`.
+### Windows amd64 (PowerShell)
+
+Téléchargez la dernière version de `skipack`, renommez l'exécutable en `skipack.exe` et installez-le dans `%USERPROFILE%\bin`. Le répertoire sera automatiquement ajouté au `PATH` utilisateur s'il n'y figure pas déjà.
+
+```powershell
+# Créer le répertoire d'installation
+New-Item -ItemType Directory -Force "$HOME\bin" | Out-Null
+
+# Télécharger la dernière release
+Invoke-WebRequest `
+    -Uri "https://github.com/CultureLinux/skipack/releases/download/v0.1.0/skipack-windows-amd64.exe" `
+    -OutFile "$HOME\bin\skipack.exe"
+
+# Ajouter le répertoire au PATH utilisateur si nécessaire
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+
+if (($userPath -split ';') -notcontains "$HOME\bin") {
+    $newPath = (@($userPath, "$HOME\bin") | Where-Object { $_ }) -join ';'
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+}
+
+# Actualiser le PATH de la session courante
+if (($env:PATH -split ';') -notcontains "$HOME\bin") {
+    $env:PATH += ";$HOME\bin"
+}
+
+# Vérifier l'installation
+skipack help
+```
+
+La commande `skipack` sera ensuite disponible depuis PowerShell, CMD et les terminaux VS Code nouvellement ouverts, sans droits administrateur.
 
 Sous Linux amd64 :
 
@@ -134,13 +161,46 @@ alors mémorisé.
 | `skipack list` | Liste les groupes et leurs skills. |
 | `skipack add <groupe>` | Installe tous les skills du groupe. |
 | `skipack delete <groupe>` | Supprime uniquement les skills suivis de ce groupe. |
-| `skipack update` | Met à jour uniquement les skills suivis dans le projet. |
+| `skipack delete --all` | Supprime tous les skills suivis dans le projet. |
+| `skipack update` | Rafraîchit le cache GitHub puis met à jour les skills suivis. |
 | `skipack help` | Affiche l’aide et des exemples. |
 
 `add` ignore tout dossier déjà présent sans le modifier. `update` prépare et
 valide tous les téléchargements avant de remplacer les versions existantes.
 `delete` ne touche jamais aux dossiers qui ne sont pas suivis dans
 `.agents/skipack-state.json`.
+
+Pour changer complètement de contexte sans supprimer les skills ajoutés
+manuellement :
+
+```console
+skipack delete --all
+skipack add autre-contexte
+```
+
+## Cache GitHub
+
+Pour limiter les appels à l’API GitHub et éviter les erreurs de rate limit
+`403`, skipack met en cache les métadonnées, les refs, les configurations
+distantes et les archives téléchargées. Plusieurs skills provenant du même
+dépôt réutilisent donc la même archive, y compris lors d’exécutions séparées.
+
+Le cache est stocké à côté du fichier de settings :
+
+- Windows : `%AppData%\skipack\cache\`
+- Linux : `~/.config/skipack/cache/`
+- macOS : `~/Library/Application Support/skipack/cache/`
+
+`list` et `add` privilégient le cache existant. La commande suivante force un
+rafraîchissement réseau des ressources utiles, une seule fois par URL, puis
+met à jour les skills suivis dans le projet :
+
+```console
+skipack update
+```
+
+Si GitHub refuse ou interrompt le rafraîchissement, l’ancien cache et les
+skills déjà installés sont conservés.
 
 ## Sources de skills
 

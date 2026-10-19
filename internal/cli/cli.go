@@ -157,15 +157,23 @@ func (a App) Run(args []string) int {
 		if len(args) != 2 {
 			return a.usage()
 		}
-		cfg, err := a.load()
-		if err != nil {
-			return a.fail("%v", err)
+		var result install.Result
+		var err error
+		if args[1] == "--all" {
+			result, err = a.manager().DeleteAll()
+		} else {
+			var cfg config.Config
+			cfg, err = a.load()
+			if err == nil {
+				var skills []config.Skill
+				var ok bool
+				skills, ok = cfg.Groups[args[1]]
+				if !ok {
+					return a.fail("unknown group %q", args[1])
+				}
+				result, err = a.manager().Delete(skills)
+			}
 		}
-		skills, ok := cfg.Groups[args[1]]
-		if !ok {
-			return a.fail("unknown group %q", args[1])
-		}
-		result, err := a.manager().Delete(skills)
 		if err != nil {
 			return a.fail("%v", err)
 		}
@@ -180,7 +188,18 @@ func (a App) Run(args []string) int {
 		if len(args) != 1 {
 			return a.usage()
 		}
-		if err := a.manager().Update(); err != nil {
+		client := a.client()
+		client.Refresh = true
+		if source, err := a.Store.Get(); err == nil && strings.HasPrefix(source, "https://") {
+			if _, err = client.ReadConfigURL(source); err != nil {
+				return a.fail("refresh configuration cache: %v", err)
+			}
+		}
+		fetcher := a.Fetcher
+		if fetcher == nil {
+			fetcher = client
+		}
+		if err := (install.Manager{Root: a.Root, Fetcher: fetcher}).Update(); err != nil {
 			return a.fail("%v", err)
 		}
 		fmt.Fprintln(a.Out, "updated tracked skills")
@@ -206,7 +225,8 @@ Commands:
   list                 List configured groups and skills
   add <group>          Install every skill in a group
   delete <group>       Delete tracked skills from a group
-  update               Update all skills tracked in the current project
+  delete --all         Delete every skill tracked in the current project
+  update               Refresh the GitHub cache, then update tracked skills
   help                 Show this help
 
 Examples:
