@@ -10,6 +10,8 @@ groups:
       skill: safe-refactor
     - source: JuliusBrussee/caveman
       skill: surgical-patch
+    - source: brianlovin/agent-config
+      skill: simplify
     - source: https://github.com/obra/superpowers/tree/main/skills/test-driven-development
     - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
 
@@ -59,7 +61,8 @@ groups:
       skill: investigate-first
 
     # Challenger le besoin et les choix techniques
-    - source: https://github.com/satya-janghu/agent-skills/tree/main/skills/grill-me
+    - source: mattpocock/skills
+      skill: grill-me
 
     # Transformer la demande en spécification
     - source: https://github.com/obra/superpowers/tree/main/skills/brainstorming

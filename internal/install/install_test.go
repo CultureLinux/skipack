@@ -106,8 +106,12 @@ func TestUpdateDownloadFailurePreservesEveryOldSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Fetcher = fakeFetcher{bodies: map[string]string{"one": "new1", "two": "new2"}, fail: "two"}
-	if err := m.Update(); err == nil {
+	result, err := m.Update()
+	if err != nil {
 		t.Fatal("update succeeded despite fetch failure")
+	}
+	if len(result.Unavailable) != 1 || result.Unavailable[0].Name != "two" {
+		t.Fatalf("unavailable=%v", result.Unavailable)
 	}
 	for _, tc := range []struct{ name, want string }{{"one", "old1"}, {"two", "old2"}} {
 		b, _ := os.ReadFile(filepath.Join(root, ".agents", "skills", tc.name, "SKILL.md"))
@@ -127,7 +131,8 @@ func TestUpdateDoesNotTouchUntrackedSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.Fetcher = fakeFetcher{bodies: map[string]string{"one": "new"}}
-	if err := m.Update(); err != nil {
+	_, err := m.Update()
+	if err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(manual, "SKILL.md"))
@@ -147,7 +152,7 @@ func TestUpdateDoesNotReplaceUnchangedSkill(t *testing.T) {
 	if err := os.Chtimes(manifest, oldTime, oldTime); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.Update(); err != nil {
+	if _, err := m.Update(); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(manifest)
@@ -183,7 +188,7 @@ func TestUpdateFetchesTheExactTrackedPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	fetcher := &pathRecordingFetcher{}
-	if err := (Manager{Root: root, Fetcher: fetcher}).Update(); err != nil {
+	if _, err := (Manager{Root: root, Fetcher: fetcher}).Update(); err != nil {
 		t.Fatal(err)
 	}
 	if len(fetcher.paths) != 1 || fetcher.paths[0] != ".agents/skills/one" {

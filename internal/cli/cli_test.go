@@ -14,6 +14,7 @@ import (
 
 	"github.com/cyklodev/skipack/internal/config"
 	gh "github.com/cyklodev/skipack/internal/github"
+	"github.com/cyklodev/skipack/internal/install"
 	projectstate "github.com/cyklodev/skipack/internal/state"
 )
 
@@ -122,6 +123,75 @@ func TestAddUnknownGroupReturnsFailure(t *testing.T) {
 	if !strings.Contains(errs.String(), "unknown group") {
 		t.Fatalf("error=%q", errs.String())
 	}
+}
+
+func TestAddAllInstallsSkillsFromEveryConfiguredGroup(t *testing.T) {
+	d := t.TempDir()
+	cfg := filepath.Join(d, "skills.yaml")
+	if err := os.WriteFile(cfg, []byte("version: 1\ngroups:\n  reflex:\n    - source: acme/repo\n      skill: one\n  planning:\n    - source: acme/repo\n      skill: two\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := config.Store{Path: filepath.Join(d, "config.json")}
+	if err := store.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	a := App{Store: store, Root: d, Out: &out, Err: &errs, Fetcher: cliFetcher{}}
+	if code := a.Run([]string{"add", "all"}); code != 0 {
+		t.Fatalf("code=%d error=%q", code, errs.String())
+	}
+	for _, name := range []string{"one", "two"} {
+		if _, err := os.Stat(filepath.Join(d, ".agents", "skills", name, "SKILL.md")); err != nil {
+			t.Fatalf("skill %q was not installed: %v", name, err)
+		}
+	}
+}
+
+func TestUpdateReportsEveryInaccessibleSkill(t *testing.T) {
+	d := t.TempDir()
+	for _, name := range []string{"one", "two"} {
+		dir := filepath.Join(d, ".agents", "skills", name)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("old"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := projectstate.Save(d, projectstate.File{Skills: []projectstate.Skill{
+		{Name: "one", Source: "acme/repo", Path: "skills/one"},
+		{Name: "two", Source: "acme/repo", Path: "skills/two"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	a := App{Root: d, Out: &out, Err: &errs, Fetcher: inaccessibleFetcher{}}
+	if code := a.Run([]string{"update"}); code == 0 {
+		t.Fatal("update succeeded despite inaccessible skills")
+	}
+	for _, name := range []string{"one", "two"} {
+		if !strings.Contains(errs.String(), name) {
+			t.Fatalf("error does not report %q: %q", name, errs.String())
+		}
+	}
+}
+
+type cliFetcher struct{}
+
+func (cliFetcher) Fetch(s config.Skill, dst string) (install.Origin, error) {
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return install.Origin{}, err
+	}
+	if err := os.WriteFile(filepath.Join(dst, "SKILL.md"), []byte(s.Skill), 0644); err != nil {
+		return install.Origin{}, err
+	}
+	return install.Origin{Source: s.Source, Path: "skills/" + s.Skill}, nil
+}
+
+type inaccessibleFetcher struct{}
+
+func (inaccessibleFetcher) Fetch(s config.Skill, _ string) (install.Origin, error) {
+	return install.Origin{}, fmt.Errorf("repository unavailable for %s", s.Skill)
 }
 
 func TestDeleteGroupRemovesTrackedSkill(t *testing.T) {

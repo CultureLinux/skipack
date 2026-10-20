@@ -109,6 +109,8 @@ Enregistrez la configuration, inspectez son contenu puis installez un groupe :
 skipack config set ./skipack.yaml
 skipack list
 skipack add reflex
+# Ou installer tous les skills de tous les groupes
+skipack add all
 ```
 
 Les skills sont installés relativement au dossier courant :
@@ -160,6 +162,7 @@ alors mémorisé.
 | `skipack config show` | Affiche la source active. |
 | `skipack list` | Liste les groupes et leurs skills. |
 | `skipack add <groupe>` | Installe tous les skills du groupe. |
+| `skipack add all` | Installe tous les skills de tous les groupes configurés. |
 | `skipack delete <groupe>` | Supprime uniquement les skills suivis de ce groupe. |
 | `skipack delete --all` | Supprime tous les skills suivis dans le projet. |
 | `skipack update` | Rafraîchit le cache GitHub puis met à jour les skills suivis. |
@@ -168,7 +171,9 @@ alors mémorisé.
 | `skipack help` | Affiche l’aide et des exemples. |
 
 `add` ignore tout dossier déjà présent sans le modifier. `update` prépare et
-valide tous les téléchargements avant de remplacer les versions existantes.
+valide tous les téléchargements avant de remplacer les versions existantes. Si
+une ou plusieurs sources de skills sont inaccessibles, il les liste toutes,
+renvoie un code d’erreur et conserve les versions déjà installées.
 `delete` ne touche jamais aux dossiers qui ne sont pas suivis dans
 `.agents/skipack-state.json`.
 

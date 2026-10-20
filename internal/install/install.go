@@ -22,6 +22,13 @@ type Manager struct {
 	Fetcher Fetcher
 }
 type Result struct{ Installed, Deleted, Skipped []string }
+type Unavailable struct {
+	Name string
+	Err  error
+}
+type UpdateResult struct {
+	Unavailable []Unavailable
+}
 
 func LoadState(root string) (projectstate.File, error) { return projectstate.Load(root) }
 func skillName(s config.Skill) (string, error) {
@@ -176,10 +183,11 @@ func (m Manager) DeleteAll() (Result, error) {
 	return m.Delete(specs)
 }
 
-func (m Manager) Update() error {
+func (m Manager) Update() (UpdateResult, error) {
+	var result UpdateResult
 	st, err := projectstate.Load(m.Root)
 	if err != nil {
-		return err
+		return result, err
 	}
 	base := filepath.Join(m.Root, ".agents", "skills")
 	type prepared struct {
@@ -196,27 +204,29 @@ func (m Manager) Update() error {
 	for index, tracked := range st.Skills {
 		tmp, err := os.MkdirTemp(base, ".skipack-update-*")
 		if err != nil {
-			return err
+			return result, err
 		}
 		spec := config.Skill{Source: tracked.Source, Skill: tracked.Name, Path: tracked.Path}
 		origin, err := m.Fetcher.Fetch(spec, tmp)
 		if err != nil {
 			os.RemoveAll(tmp)
-			return fmt.Errorf("prepare update %s: %w", tracked.Name, err)
+			result.Unavailable = append(result.Unavailable, Unavailable{Name: tracked.Name, Err: err})
+			continue
 		}
 		if _, err = os.Stat(filepath.Join(tmp, "SKILL.md")); err != nil {
 			os.RemoveAll(tmp)
-			return fmt.Errorf("prepare update %s: missing SKILL.md", tracked.Name)
+			result.Unavailable = append(result.Unavailable, Unavailable{Name: tracked.Name, Err: errors.New("missing SKILL.md")})
+			continue
 		}
 		dst := filepath.Join(base, tracked.Name)
 		if _, err = os.Stat(dst); err != nil {
 			os.RemoveAll(tmp)
-			return fmt.Errorf("tracked skill %s is missing", tracked.Name)
+			return result, fmt.Errorf("tracked skill %s is missing", tracked.Name)
 		}
 		equal, err := directoriesEqual(tmp, dst)
 		if err != nil {
 			os.RemoveAll(tmp)
-			return fmt.Errorf("compare update %s: %w", tracked.Name, err)
+			return result, fmt.Errorf("compare update %s: %w", tracked.Name, err)
 		}
 		if equal {
 			os.RemoveAll(tmp)
@@ -226,8 +236,11 @@ func (m Manager) Update() error {
 		tracked.Path = origin.Path
 		all = append(all, prepared{s: tracked, dir: tmp, index: index})
 	}
+	if len(result.Unavailable) > 0 {
+		return result, nil
+	}
 	if len(all) == 0 {
-		return nil
+		return result, nil
 	}
 	type swapped struct{ dst, bak string }
 	var done []swapped
@@ -242,24 +255,24 @@ func (m Manager) Update() error {
 		bak := dst + ".skipack-backup"
 		if err := os.Rename(dst, bak); err != nil {
 			rollback()
-			return err
+			return result, err
 		}
 		done = append(done, swapped{dst, bak})
 		if err := os.Rename(p.dir, dst); err != nil {
 			rollback()
-			return err
+			return result, err
 		}
 		all[i].dir = ""
 		st.Skills[p.index] = p.s
 	}
 	if err := projectstate.Save(m.Root, st); err != nil {
 		rollback()
-		return err
+		return result, err
 	}
 	for _, s := range done {
 		_ = os.RemoveAll(s.bak)
 	}
-	return nil
+	return result, nil
 }
 
 type fileSnapshot struct {

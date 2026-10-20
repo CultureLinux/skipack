@@ -176,9 +176,22 @@ func (a App) Run(args []string) int {
 		if err != nil {
 			return a.fail("%v", err)
 		}
-		skills, ok := cfg.Groups[args[1]]
-		if !ok {
-			return a.fail("unknown group %q", args[1])
+		var skills []config.Skill
+		if args[1] == "all" {
+			names := make([]string, 0, len(cfg.Groups))
+			for name := range cfg.Groups {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				skills = append(skills, cfg.Groups[name]...)
+			}
+		} else {
+			var ok bool
+			skills, ok = cfg.Groups[args[1]]
+			if !ok {
+				return a.fail("unknown group %q", args[1])
+			}
 		}
 		result, err := a.manager().Add(skills)
 		if err != nil {
@@ -237,8 +250,15 @@ func (a App) Run(args []string) int {
 		if fetcher == nil {
 			fetcher = client
 		}
-		if err := (install.Manager{Root: a.Root, Fetcher: fetcher}).Update(); err != nil {
+		result, err := (install.Manager{Root: a.Root, Fetcher: fetcher}).Update()
+		if err != nil {
 			return a.fail("%v", err)
+		}
+		if len(result.Unavailable) > 0 {
+			for _, unavailable := range result.Unavailable {
+				fmt.Fprintf(a.Err, "skipack: inaccessible %s: %v\n", unavailable.Name, unavailable.Err)
+			}
+			return 1
 		}
 		fmt.Fprintln(a.Out, "updated tracked skills")
 		return 0
@@ -261,7 +281,7 @@ Commands:
   config set <source>  Set a local YAML file or public GitHub file as config
   config show          Show the active configuration source
   list                 List configured groups and skills
-  add <group>          Install every skill in a group
+  add <group>|all      Install every skill in a group, or all configured skills
   delete <group>       Delete tracked skills from a group
   delete --all         Delete every skill tracked in the current project
   update               Refresh the GitHub cache, then update tracked skills
@@ -274,6 +294,7 @@ Examples:
   skipack config set https://github.com/owner/repo/blob/main/skipack.yaml
   skipack list
   skipack add reflex
+  skipack add all
   skipack delete reflex
 
 Skills are installed in .agents/skills relative to the current directory.
