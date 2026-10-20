@@ -52,3 +52,17 @@ groups:
       skill: safe-refactor
     - source: JuliusBrussee/caveman
       skill: surgical-patch
+
+  planning:
+    # Examiner le code existant avant de poser des questions
+    - source: JuliusBrussee/caveman
+      skill: investigate-first
+
+    # Challenger le besoin et les choix techniques
+    - source: https://github.com/satya-janghu/agent-skills/tree/main/skills/grill-me
+
+    # Transformer la demande en spécification
+    - source: https://github.com/obra/superpowers/tree/main/skills/brainstorming
+
+    # Découper la spécification en tâches testables
+    - source: https://github.com/obra/superpowers/tree/main/skills/writing-plans
