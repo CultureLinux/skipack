@@ -170,6 +170,27 @@ func TestClientMissingShortSkillCreatesNoDestination(t *testing.T) {
 	}
 }
 
+func TestClientAuditValidatesSkillFileWithoutInstalling(t *testing.T) {
+	z := archive(map[string]string{"repo-sha/skills/x/SKILL.md": "---\nname: x\n---\ncontent"})
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/acme/repo" {
+			fmt.Fprint(w, `{"default_branch":"main"}`)
+			return
+		}
+		w.Write(z)
+	}))
+	defer s.Close()
+	c := NewClient()
+	c.APIBase, c.HTTP, c.CacheDir = s.URL, s.Client(), t.TempDir()
+	origin, err := c.Audit(config.Skill{Source: "acme/repo", Skill: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if origin.Path != "skills/x" {
+		t.Fatalf("origin=%#v", origin)
+	}
+}
+
 func TestDefaultClientRejectsRedirectToUnexpectedHost(t *testing.T) {
 	c := NewClient()
 	req, err := http.NewRequest(http.MethodGet, "https://example.com/archive.zip", nil)

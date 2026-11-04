@@ -168,8 +168,41 @@ func (a App) Run(args []string) int {
 			}
 		}
 		return 0
+	case "audit":
+		if len(args) != 1 {
+			return a.usage()
+		}
+		cfg, err := a.load()
+		if err != nil {
+			return a.fail("%v", err)
+		}
+		names := make([]string, 0, len(cfg.Groups))
+		for name := range cfg.Groups {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		failed := false
+		for _, group := range names {
+			for _, skill := range cfg.Groups[group] {
+				name := skill.Skill
+				if name == "" {
+					parts := strings.Split(strings.TrimRight(skill.Source, "/"), "/")
+					name = parts[len(parts)-1]
+				}
+				if _, err := a.client().Audit(skill); err != nil {
+					fmt.Fprintf(a.Err, "invalid %s/%s: %v\n", group, name, err)
+					failed = true
+					continue
+				}
+				fmt.Fprintf(a.Out, "ok %s/%s\n", group, name)
+			}
+		}
+		if failed {
+			return 1
+		}
+		return 0
 	case "add":
-		if len(args) != 2 {
+		if len(args) < 2 {
 			return a.usage()
 		}
 		cfg, err := a.load()
@@ -177,7 +210,7 @@ func (a App) Run(args []string) int {
 			return a.fail("%v", err)
 		}
 		var skills []config.Skill
-		if args[1] == "all" {
+		if len(args) == 2 && args[1] == "all" {
 			names := make([]string, 0, len(cfg.Groups))
 			for name := range cfg.Groups {
 				names = append(names, name)
@@ -187,10 +220,12 @@ func (a App) Run(args []string) int {
 				skills = append(skills, cfg.Groups[name]...)
 			}
 		} else {
-			var ok bool
-			skills, ok = cfg.Groups[args[1]]
-			if !ok {
-				return a.fail("unknown group %q", args[1])
+			for _, group := range args[1:] {
+				groupSkills, ok := cfg.Groups[group]
+				if !ok {
+					return a.fail("unknown group %q", group)
+				}
+				skills = append(skills, groupSkills...)
 			}
 		}
 		result, err := a.manager().Add(skills)
@@ -205,22 +240,24 @@ func (a App) Run(args []string) int {
 		}
 		return 0
 	case "delete":
-		if len(args) != 2 {
+		if len(args) < 2 {
 			return a.usage()
 		}
 		var result install.Result
 		var err error
-		if args[1] == "--all" {
+		if len(args) == 2 && (args[1] == "all" || args[1] == "--all") {
 			result, err = a.manager().DeleteAll()
 		} else {
 			var cfg config.Config
 			cfg, err = a.load()
 			if err == nil {
 				var skills []config.Skill
-				var ok bool
-				skills, ok = cfg.Groups[args[1]]
-				if !ok {
-					return a.fail("unknown group %q", args[1])
+				for _, group := range args[1:] {
+					groupSkills, ok := cfg.Groups[group]
+					if !ok {
+						return a.fail("unknown group %q", group)
+					}
+					skills = append(skills, groupSkills...)
 				}
 				result, err = a.manager().Delete(skills)
 			}
@@ -281,8 +318,9 @@ Commands:
   config set <source>  Set a local YAML file or public GitHub file as config
   config show          Show the active configuration source
   list                 List configured groups and skills
-  add <group>|all      Install every skill in a group, or all configured skills
-  delete <group>       Delete tracked skills from a group
+  audit                Verify configured skills without installing them
+  add <group>...|--all Install skills from one or more groups, or all configured skills
+  delete <group>...    Delete tracked skills from one or more groups
   delete --all         Delete every skill tracked in the current project
   update               Refresh the GitHub cache, then update tracked skills
   self-update          Replace skipack with the latest GitHub release
@@ -291,11 +329,12 @@ Commands:
 
 Examples:
   skipack config set ./skipack.yaml
-  skipack config set https://github.com/owner/repo/blob/main/skipack.yaml
+  skipack config set https://github.com/CultureLinux/skipack/blob/main/skipack.yaml
   skipack list
-  skipack add reflex
-  skipack add all
+  skipack add reflex design-pro php docker github-actions gitlab-ci tailwind refactoring-pro planning debugging
+  skipack add --all
   skipack delete reflex
+  skipack delete --all
 
 Skills are installed in .agents/skills relative to the current directory.
 `)

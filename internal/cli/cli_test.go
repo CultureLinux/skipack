@@ -28,7 +28,7 @@ func TestHelpShowsCommandsAndExamples(t *testing.T) {
 	if code := a.Run([]string{"help"}); code != 0 {
 		t.Fatalf("code=%d error=%q", code, errs.String())
 	}
-	for _, text := range []string{"Usage:", "Commands:", "delete <group>", "version", "Examples:", "skipack config set https://github.com/"} {
+	for _, text := range []string{"Usage:", "Commands:", "delete <group>", "add <group>...|--all", "delete --all", "version", "Examples:", "skipack config set https://github.com/CultureLinux/skipack/blob/main/skipack.yaml"} {
 		if !strings.Contains(out.String(), text) {
 			t.Fatalf("help does not contain %q:\n%s", text, out.String())
 		}
@@ -42,6 +42,39 @@ func TestNoArgumentsShowsHelpSuccessfully(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Usage:") {
 		t.Fatalf("output=%q", out.String())
+	}
+}
+
+func TestAuditReportsConfiguredSkillWithoutInstallingIt(t *testing.T) {
+	d := t.TempDir()
+	cfg := filepath.Join(d, "skipack.yaml")
+	if err := os.WriteFile(cfg, []byte("version: 1\ngroups:\n  quality:\n    - source: acme/repo\n      skill: checked\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/acme/repo":
+			fmt.Fprint(w, `{"default_branch":"main"}`)
+		default:
+			w.Write(testArchive(t, map[string]string{"repo-sha/skills/checked/SKILL.md": "content"}))
+		}
+	}))
+	defer server.Close()
+	client := gh.NewClient()
+	client.APIBase, client.HTTP, client.CacheDir = server.URL, server.Client(), t.TempDir()
+	var out, errs bytes.Buffer
+	a := App{Store: config.Store{Path: filepath.Join(d, "config.json")}, Root: d, Out: &out, Err: &errs, GitHub: client}
+	if err := a.Store.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if code := a.Run([]string{"audit"}); code != 0 {
+		t.Fatalf("code=%d error=%q", code, errs.String())
+	}
+	if !strings.Contains(out.String(), "ok quality/checked") {
+		t.Fatalf("output=%q", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(d, ".agents", "skills", "checked")); !os.IsNotExist(err) {
+		t.Fatal("audit installed the skill")
 	}
 }
 
@@ -241,7 +274,7 @@ func TestDeleteAllDoesNotRequireConfiguration(t *testing.T) {
 	}
 	var out, errs bytes.Buffer
 	a := App{Store: config.Store{Path: filepath.Join(d, "missing-config.json")}, Root: d, Out: &out, Err: &errs}
-	if code := a.Run([]string{"delete", "--all"}); code != 0 {
+	if code := a.Run([]string{"delete", "all"}); code != 0 {
 		t.Fatalf("code=%d error=%q", code, errs.String())
 	}
 	if !strings.Contains(out.String(), "deleted one") {

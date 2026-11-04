@@ -110,7 +110,7 @@ skipack config set ./skipack.yaml
 skipack list
 skipack add reflex
 # Ou installer tous les skills de tous les groupes
-skipack add all
+skipack add --all
 ```
 
 Les skills sont installés relativement au dossier courant :
@@ -161,9 +161,10 @@ alors mémorisé.
 | `skipack config set <source>` | Enregistre un fichier local ou une URL GitHub publique. |
 | `skipack config show` | Affiche la source active. |
 | `skipack list` | Liste les groupes et leurs skills. |
-| `skipack add <groupe>` | Installe tous les skills du groupe. |
-| `skipack add all` | Installe tous les skills de tous les groupes configurés. |
-| `skipack delete <groupe>` | Supprime uniquement les skills suivis de ce groupe. |
+| `skipack audit` | Vérifie les sources et les fichiers `SKILL.md` sans installer de skill. |
+| `skipack add <groupe>...` | Installe tous les skills d’un ou plusieurs groupes. |
+| `skipack add --all` | Installe tous les skills de tous les groupes configurés. |
+| `skipack delete <groupe>...` | Supprime uniquement les skills suivis d’un ou plusieurs groupes. |
 | `skipack delete --all` | Supprime tous les skills suivis dans le projet. |
 | `skipack update` | Rafraîchit le cache GitHub puis met à jour les skills suivis. |
 | `skipack self-update` | Télécharge et installe la dernière release de skipack. |

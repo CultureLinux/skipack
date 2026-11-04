@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cyklodev/skipack/internal/config"
 	"github.com/cyklodev/skipack/internal/install"
@@ -232,6 +233,92 @@ func (c *Client) Fetch(spec config.Skill, dst string) (install.Origin, error) {
 		return install.Origin{}, err
 	}
 	return install.Origin{Source: spec.Source, Path: valid[0]}, nil
+}
+
+// Audit verifies that a configured skill still resolves to a non-empty UTF-8
+// SKILL.md without writing anything to the project.
+func (c *Client) Audit(spec config.Skill) (install.Origin, error) {
+	var owner, repo, ref, path string
+	if strings.HasPrefix(spec.Source, "https://") {
+		s, err := ParseTreeURL(spec.Source)
+		if err != nil {
+			return install.Origin{}, err
+		}
+		refs, err := c.refs(s.Owner, s.Repo)
+		if err != nil {
+			return install.Origin{}, err
+		}
+		ref, path, err = ChooseRef(s.Remainder, refs)
+		if err != nil {
+			return install.Origin{}, err
+		}
+		owner, repo = s.Owner, s.Repo
+	} else {
+		if !repoPattern.MatchString(spec.Source) || spec.Skill == "" {
+			return install.Origin{}, errors.New("short source must be owner/repo with a skill name")
+		}
+		parts := strings.Split(spec.Source, "/")
+		var err error
+		owner, repo = parts[0], parts[1]
+		ref, err = c.defaultBranch(owner, repo)
+		if err != nil {
+			return install.Origin{}, err
+		}
+		path = spec.Path
+	}
+	data, err := c.archive(owner, repo, ref)
+	if err != nil {
+		return install.Origin{}, err
+	}
+	if path == "" {
+		candidates := []string{"skills/" + spec.Skill, ".agents/skills/" + spec.Skill, ".claude/skills/" + spec.Skill, spec.Skill}
+		valid := validCandidates(data, candidates)
+		if len(valid) == 0 {
+			return install.Origin{}, fmt.Errorf("skill %q not found in supported locations", spec.Skill)
+		}
+		if len(valid) > 1 {
+			return install.Origin{}, fmt.Errorf("skill %q is ambiguous: %s", spec.Skill, strings.Join(valid, ", "))
+		}
+		path = valid[0]
+	}
+	if err := validateSkillFile(data, path); err != nil {
+		return install.Origin{}, err
+	}
+	return install.Origin{Source: spec.Source, Path: path}, nil
+}
+
+func validateSkillFile(data []byte, path string) error {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return err
+	}
+	want := strings.Trim(path, "/") + "/SKILL.md"
+	for _, f := range r.File {
+		parts := strings.Split(filepathSlash(f.Name), "/")
+		if len(parts) < 2 || strings.Join(parts[1:], "/") != want || f.FileInfo().IsDir() {
+			continue
+		}
+		file, err := f.Open()
+		if err != nil {
+			return err
+		}
+		b, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if len(b) == 0 {
+			return errors.New("SKILL.md is empty")
+		}
+		if !utf8.Valid(b) {
+			return errors.New("SKILL.md is not valid UTF-8")
+		}
+		return nil
+	}
+	return errors.New("missing SKILL.md")
 }
 func validCandidates(data []byte, candidates []string) []string {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))

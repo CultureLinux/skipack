@@ -1,3 +1,4 @@
+
 version: 1
 
 groups:
@@ -32,14 +33,10 @@ groups:
   design-pro:
     - source: vercel-labs/open-agents
       skill: frontend-design
-
     - source: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill/tree/main/.claude/skills/ui-ux-pro-max
-
     - source: https://github.com/wshobson/agents/tree/main/plugins/frontend-mobile-development/skills/tailwind-design-system
-
     - source: vercel-labs/agent-skills
       skill: web-design-guidelines
-
     - source: https://github.com/wshobson/agents/tree/main/plugins/ui-design/skills/responsive-design
 
   tailwind:
@@ -61,11 +58,94 @@ groups:
       skill: investigate-first
 
     # Challenger le besoin et les choix techniques
-    - source: mattpocock/skills
-      skill: grill-me
+    - source: https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me
+    - source: https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling
 
     # Transformer la demande en spécification
     - source: https://github.com/obra/superpowers/tree/main/skills/brainstorming
 
     # Découper la spécification en tâches testables
     - source: https://github.com/obra/superpowers/tree/main/skills/writing-plans
+
+  # Diagnostic et recherche de causes racines
+  debugging:
+    - source: https://github.com/obra/superpowers/tree/main/skills/systematic-debugging
+    - source: JuliusBrussee/caveman
+      skill: investigate-first
+
+  # Relecture du code et vérification des exigences
+  review:
+    - source: https://github.com/obra/superpowers/tree/main/skills/requesting-code-review
+    - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
+
+  # Tests fonctionnels et qualité des interfaces web
+  web-testing:
+    - source: vercel-labs/open-agents
+      skill: agent-browser
+    - source: vercel-labs/agent-skills
+      skill: web-design-guidelines
+
+  # Cadrage interactif et préparation des fonctionnalités
+  planning-interview:
+    - source: https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me
+    - source: https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling
+    - source: https://github.com/obra/superpowers/tree/main/skills/writing-plans
+
+  # Refactoring approfondi et simplification du code
+  refactoring-pro:
+    - source: JuliusBrussee/caveman
+      skill: investigate-first
+    - source: JuliusBrussee/caveman
+      skill: safe-refactor
+    - source: brianlovin/agent-config
+      skill: simplify
+    - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
+
+  # Go : CLI, applications serveur et code idiomatique
+  golang:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/golang-pro
+
+  # Go : concurrence avancée, à installer seulement si nécessaire
+  golang-concurrency:
+    - source: https://github.com/wshobson/agents/tree/main/plugins/systems-programming/skills/go-concurrency-patterns
+
+  # PHP moderne, PHPUnit, PHPStan, PSR
+  php:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/php-pro
+
+  # JavaScript navigateur et Node.js
+  javascript:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/javascript-pro
+
+  # TypeScript strict
+  typescript:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/typescript-pro
+
+  # Python moderne
+  python:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/python-pro
+
+  # Bash : robustesse et analyse statique
+  bash:
+    - source: https://github.com/wshobson/agents/tree/main/plugins/shell-scripting/skills/bash-defensive-patterns
+    - source: https://github.com/wshobson/agents/tree/main/plugins/shell-scripting/skills/shellcheck-configuration
+
+  # Tests automatisés de scripts Bash
+  bash-testing:
+    - source: https://github.com/wshobson/agents/tree/main/plugins/shell-scripting/skills/bats-testing-patterns
+
+  # SQL : requêtes, schémas, index, performances
+  sql:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/sql-pro
+
+  # Docker et Docker Compose
+  docker:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/devops-engineer
+
+  # GitHub Actions
+  github-actions:
+    - source: https://github.com/wshobson/agents/tree/main/plugins/cicd-automation/skills/github-actions-templates
+
+  # GitLab CI/CD
+  gitlab-ci:
+    - source: https://github.com/wshobson/agents/tree/main/plugins/cicd-automation/skills/gitlab-ci-patterns
