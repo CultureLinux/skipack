@@ -46,6 +46,12 @@ groups:
     - source: https://github.com/obra/superpowers/tree/main/skills/test-driven-development
     - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
 
+  # Audit de sécurité applicative (Symfony, JavaScript et API)
+  security:
+    - source: https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices
+    - source: https://github.com/openai/skills/tree/main/skills/.curated/security-threat-model
+    - source: https://github.com/openai/skills/tree/main/skills/.curated/security-ownership-map
+
   refactoring:
     - source: JuliusBrussee/caveman
       skill: safe-refactor
