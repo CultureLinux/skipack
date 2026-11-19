@@ -2,17 +2,16 @@
 version: 1
 
 groups:
+  # Discipline de travail : enquêter, patcher au plus juste, tester, vérifier.
+  # Pas de /simplify ici : Claude Code l'intègre en natif et la source
+  # brianlovin/agent-config n'existe plus.
   reflex:
-    - source: JuliusBrussee/caveman
-      skill: caveman
     - source: JuliusBrussee/caveman
       skill: investigate-first
     - source: JuliusBrussee/caveman
       skill: safe-refactor
     - source: JuliusBrussee/caveman
       skill: surgical-patch
-    - source: brianlovin/agent-config
-      skill: simplify
     - source: https://github.com/obra/superpowers/tree/main/skills/test-driven-development
     - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
 
@@ -23,6 +22,11 @@ groups:
       skill: surgical-patch
     - source: JuliusBrussee/caveman
       skill: verify-and-stop
+
+  # Style de réponse concis (change la façon dont l'agent parle) : à activer à part
+  caveman:
+    - source: JuliusBrussee/caveman
+      skill: caveman
 
   design:
     - source: vercel-labs/open-agents
@@ -46,11 +50,16 @@ groups:
     - source: https://github.com/obra/superpowers/tree/main/skills/test-driven-development
     - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
 
-  # Audit de sécurité applicative (Symfony, JavaScript et API)
+  # Sécurité applicative. Les deux premiers skills sont génériques ;
+  # aucun skill spécifique à Symfony n'a été trouvé.
   security:
     - source: https://github.com/openai/skills/tree/main/skills/.curated/security-best-practices
     - source: https://github.com/openai/skills/tree/main/skills/.curated/security-threat-model
+    # Analyse de la propriété du code à partir de l'historique git
     - source: https://github.com/openai/skills/tree/main/skills/.curated/security-ownership-map
+    # Revue de code orientée sécurité
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/secure-code-guardian
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/security-reviewer
 
   refactoring:
     - source: JuliusBrussee/caveman
@@ -58,6 +67,7 @@ groups:
     - source: JuliusBrussee/caveman
       skill: surgical-patch
 
+  # Du cadrage à l'exécution : enquêter, challenger, spécifier, découper, exécuter
   planning:
     # Examiner le code existant avant de poser des questions
     - source: JuliusBrussee/caveman
@@ -73,39 +83,70 @@ groups:
     # Découper la spécification en tâches testables
     - source: https://github.com/obra/superpowers/tree/main/skills/writing-plans
 
+    # Exécuter le plan par étapes, avec points de contrôle
+    - source: https://github.com/obra/superpowers/tree/main/skills/executing-plans
+    - source: https://github.com/obra/superpowers/tree/main/skills/subagent-driven-development
+
   # Diagnostic et recherche de causes racines
   debugging:
     - source: https://github.com/obra/superpowers/tree/main/skills/systematic-debugging
     - source: JuliusBrussee/caveman
       skill: investigate-first
 
-  # Relecture du code et vérification des exigences
+  # Relecture du code, retours de relecture et vérification des exigences
   review:
     - source: https://github.com/obra/superpowers/tree/main/skills/requesting-code-review
+    - source: https://github.com/obra/superpowers/tree/main/skills/receiving-code-review
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/code-reviewer
     - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
 
-  # Tests fonctionnels et qualité des interfaces web
+  # Tests fonctionnels des interfaces web (navigateur, Playwright)
   web-testing:
     - source: vercel-labs/open-agents
       skill: agent-browser
-    - source: vercel-labs/agent-skills
-      skill: web-design-guidelines
+    - source: https://github.com/anthropics/skills/tree/main/skills/webapp-testing
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/playwright-expert
 
-  # Cadrage interactif et préparation des fonctionnalités
-  planning-interview:
-    - source: https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me
-    - source: https://github.com/mattpocock/skills/tree/main/skills/productivity/grilling
-    - source: https://github.com/obra/superpowers/tree/main/skills/writing-plans
-
-  # Refactoring approfondi et simplification du code
+  # Refactoring approfondi (pas de /simplify : voir le groupe reflex)
   refactoring-pro:
     - source: JuliusBrussee/caveman
       skill: investigate-first
     - source: JuliusBrussee/caveman
       skill: safe-refactor
-    - source: brianlovin/agent-config
-      skill: simplify
     - source: https://github.com/obra/superpowers/tree/main/skills/verification-before-completion
+
+  # Flux git : worktrees, fin de branche, corrections de CI et retours de relecture GitHub
+  git-workflow:
+    - source: https://github.com/obra/superpowers/tree/main/skills/using-git-worktrees
+    - source: https://github.com/obra/superpowers/tree/main/skills/finishing-a-development-branch
+    - source: https://github.com/openai/skills/tree/main/skills/.curated/gh-fix-ci
+    - source: https://github.com/openai/skills/tree/main/skills/.curated/gh-address-comments
+
+  # Conception d'API : principes, contrats, spécification OpenAPI
+  api:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/api-designer
+    - source: https://github.com/wshobson/agents/tree/main/plugins/backend-development/skills/api-design-principles
+    - source: https://github.com/wshobson/agents/tree/main/plugins/documentation-generation/skills/openapi-spec-generation
+
+  # Documentation : code, décisions d'architecture, changelog
+  docs:
+    - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/code-documenter
+    - source: https://github.com/wshobson/agents/tree/main/plugins/documentation-generation/skills/architecture-decision-records
+    - source: https://github.com/wshobson/agents/tree/main/plugins/documentation-generation/skills/changelog-automation
+
+  # Accessibilité : audit WCAG et lecteurs d'écran
+  a11y:
+    - source: https://github.com/wshobson/agents/tree/main/plugins/accessibility-compliance/skills/wcag-audit-patterns
+    - source: https://github.com/wshobson/agents/tree/main/plugins/accessibility-compliance/skills/screen-reader-testing
+
+  # Écrire et améliorer des skills
+  skills-authoring:
+    - source: https://github.com/obra/superpowers/tree/main/skills/writing-skills
+    - source: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+
+  # Construire des serveurs MCP
+  mcp:
+    - source: https://github.com/anthropics/skills/tree/main/skills/mcp-builder
 
   # Go : CLI, applications serveur et code idiomatique
   golang:
@@ -144,7 +185,8 @@ groups:
   sql:
     - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/sql-pro
 
-  # Docker et Docker Compose
+  # Docker et DevOps : devops-engineer couvre aussi CI/CD et infrastructure,
+  # pas seulement Docker (le nom du groupe est gardé pour ne pas casser les commandes existantes)
   docker:
     - source: https://github.com/Jeffallan/claude-skills/tree/main/skills/devops-engineer
 
