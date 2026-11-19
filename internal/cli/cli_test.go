@@ -374,3 +374,30 @@ func testArchive(t *testing.T, entries map[string]string) []byte {
 	}
 	return b.Bytes()
 }
+
+func TestAgentSetCopiesSkillsAndShowPrintsAgents(t *testing.T) {
+	d := t.TempDir()
+	dir := filepath.Join(d, ".agents", "skills", "one")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0644)
+	if err := projectstate.Save(d, projectstate.File{Version: 1, Skills: []projectstate.Skill{{Name: "one", Source: "a/r"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	a := App{Root: d, Out: &out, Err: &errs, Fetcher: inaccessibleFetcher{}}
+	if code := a.Run([]string{"agent", "set", "codex", "claude"}); code != 0 {
+		t.Fatalf("code=%d error=%q", code, errs.String())
+	}
+	if _, err := os.Stat(filepath.Join(d, ".claude", "skills", "one", "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := a.Run([]string{"agent", "show"}); code != 0 || out.String() != "codex claude\n" {
+		t.Fatalf("code=%d out=%q", code, out.String())
+	}
+	if code := a.Run([]string{"agent", "set", "gemini"}); code != 1 {
+		t.Fatalf("unknown agent code=%d", code)
+	}
+}

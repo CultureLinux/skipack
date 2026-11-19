@@ -144,6 +144,32 @@ func (a App) Run(args []string) int {
 			return 0
 		}
 		return a.usage()
+	case "agent":
+		if len(args) == 2 && args[1] == "show" {
+			st, err := install.LoadState(a.Root)
+			if err != nil {
+				return a.fail("%v", err)
+			}
+			fmt.Fprintln(a.Out, strings.Join(install.Agents(st), " "))
+			return 0
+		}
+		if len(args) >= 3 && args[1] == "set" {
+			result, err := a.manager().SetAgents(args[2:])
+			if err != nil {
+				return a.fail("%v", err)
+			}
+			for _, n := range result.Copied {
+				fmt.Fprintf(a.Out, "copied %s\n", n)
+			}
+			for _, n := range result.Removed {
+				fmt.Fprintf(a.Out, "removed %s\n", n)
+			}
+			for _, n := range result.Left {
+				fmt.Fprintf(a.Out, "left in place %s (not tracked by skipack)\n", n)
+			}
+			return 0
+		}
+		return a.usage()
 	case "list":
 		if len(args) != 1 {
 			return a.usage()
@@ -317,6 +343,8 @@ Usage:
 Commands:
   config set <source>  Set a local YAML file or public GitHub file as config
   config show          Show the active configuration source
+  agent set <agent>... Choose codex (.agents), claude (.claude) or both; tracked skills are copied locally
+  agent show           Show the agents of the current project
   list                 List configured groups and skills
   audit                Verify configured skills without installing them
   add <group>...|--all Install skills from one or more groups, or all configured skills
@@ -330,12 +358,14 @@ Commands:
 Examples:
   skipack config set ./skipack.yaml
   skipack config set https://github.com/CultureLinux/skipack/blob/main/skipack.yaml
+  skipack agent set codex claude
   skipack list
   skipack add reflex design-pro php docker github-actions gitlab-ci tailwind refactoring-pro planning debugging
   skipack add --all
   skipack delete reflex
   skipack delete --all
 
-Skills are installed in .agents/skills relative to the current directory.
+Skills are installed in <agent dir>/skills relative to the current directory:
+.agents/skills for codex (default), .claude/skills for claude.
 `)
 }

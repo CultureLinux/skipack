@@ -287,3 +287,129 @@ func TestDeleteAllRemovesEveryTrackedSkillAndPreservesManualFolders(t *testing.T
 		t.Fatal("manual skill was removed")
 	}
 }
+
+type noFetch struct{ t *testing.T }
+
+func (f noFetch) Fetch(config.Skill, string) (Origin, error) {
+	f.t.Fatal("unexpected download")
+	return Origin{}, nil
+}
+
+func readFile(t *testing.T, parts ...string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(parts...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestSetAgentsCopiesTrackedSkillsWithoutDownloading(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "body"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	m.Fetcher = noFetch{t}
+	r, err := m.SetAgents([]string{"codex", "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Copied) != 1 || r.Copied[0] != "claude/one" {
+		t.Fatalf("copied=%v", r.Copied)
+	}
+	if got := readFile(t, root, ".claude", "skills", "one", "SKILL.md"); got != "body" {
+		t.Fatalf("copy = %q", got)
+	}
+	readFile(t, root, ".agents", "skills", "one", "SKILL.md")
+	st, _ := LoadState(root)
+	if len(st.Agents) != 2 || len(st.Skills[0].Agents) != 2 {
+		t.Fatalf("state=%#v", st)
+	}
+}
+
+func TestSetAgentsSwitchMovesTrackedSkillsAndKeepsManualOnes(t *testing.T) {
+	root := t.TempDir()
+	manual := filepath.Join(root, ".agents", "skills", "manual")
+	os.MkdirAll(manual, 0755)
+	os.WriteFile(filepath.Join(manual, "SKILL.md"), []byte("mine"), 0644)
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "body"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	m.Fetcher = noFetch{t}
+	r, err := m.SetAgents([]string{"claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Removed) != 1 || r.Removed[0] != "codex/one" || len(r.Left) != 1 || r.Left[0] != "codex/manual" {
+		t.Fatalf("result=%#v", r)
+	}
+	readFile(t, root, ".claude", "skills", "one", "SKILL.md")
+	if _, err := os.Stat(filepath.Join(root, ".agents", "skills", "one")); !os.IsNotExist(err) {
+		t.Fatal("tracked skill remained for removed agent")
+	}
+	if readFile(t, manual, "SKILL.md") != "mine" {
+		t.Fatal("manual skill changed")
+	}
+}
+
+func TestSetAgentsConflictLeavesProjectUntouched(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "body"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(root, ".claude", "skills", "one")
+	os.MkdirAll(other, 0755)
+	os.WriteFile(filepath.Join(other, "SKILL.md"), []byte("manual"), 0644)
+	if _, err := m.SetAgents([]string{"claude"}); err == nil {
+		t.Fatal("expected conflict error")
+	}
+	if readFile(t, other, "SKILL.md") != "manual" || readFile(t, root, ".agents", "skills", "one", "SKILL.md") != "body" {
+		t.Fatal("project changed despite conflict")
+	}
+	st, _ := LoadState(root)
+	if len(st.Agents) != 0 {
+		t.Fatalf("state changed: %#v", st)
+	}
+}
+
+func TestSetAgentsRejectsUnknownAgent(t *testing.T) {
+	if _, err := (Manager{Root: t.TempDir()}).SetAgents([]string{"gemini"}); err == nil {
+		t.Fatal("unknown agent accepted")
+	}
+}
+
+func TestAddUpdateDeleteApplyToEveryAgent(t *testing.T) {
+	root := t.TempDir()
+	if err := projectstate.Save(root, projectstate.File{Version: 1, Agents: []string{"codex", "claude"}}); err != nil {
+		t.Fatal(err)
+	}
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "old"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{".agents", ".claude"} {
+		if readFile(t, root, dir, "skills", "one", "SKILL.md") != "old" {
+			t.Fatalf("%s not installed", dir)
+		}
+	}
+	m.Fetcher = fakeFetcher{bodies: map[string]string{"one": "new"}}
+	if _, err := m.Update(); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{".agents", ".claude"} {
+		if readFile(t, root, dir, "skills", "one", "SKILL.md") != "new" {
+			t.Fatalf("%s not updated", dir)
+		}
+	}
+	if _, err := m.DeleteAll(); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{".agents", ".claude"} {
+		if _, err := os.Stat(filepath.Join(root, dir, "skills", "one")); !os.IsNotExist(err) {
+			t.Fatalf("%s not deleted", dir)
+		}
+	}
+}

@@ -164,6 +164,8 @@ alors mémorisé.
 | `skipack audit` | Vérifie les sources et les fichiers `SKILL.md` sans installer de skill. |
 | `skipack add <groupe>...` | Installe tous les skills d’un ou plusieurs groupes. |
 | `skipack add --all` | Installe tous les skills de tous les groupes configurés. |
+| `skipack agent set <agent>...` | Choisit `codex` (`.agents/skills`), `claude` (`.claude/skills`) ou les deux. Les skills suivis sont copiés localement, sans téléchargement. |
+| `skipack agent show` | Affiche les agents du projet (défaut : `codex`). |
 | `skipack delete <groupe>...` | Supprime uniquement les skills suivis d’un ou plusieurs groupes. |
 | `skipack delete --all` | Supprime tous les skills suivis dans le projet. |
 | `skipack update` | Rafraîchit le cache GitHub puis met à jour les skills suivis. |
@@ -185,6 +187,24 @@ manuellement :
 skipack delete --all
 skipack add autre-contexte
 ```
+
+## Codex et Claude
+
+Par défaut, les skills sont installés pour Codex dans `.agents/skills`. Claude
+Code lit `.claude/skills` :
+
+```console
+skipack agent set codex claude   # les deux cohabitent
+skipack agent set claude         # passe à Claude seul
+skipack agent show
+```
+
+Changer d'agent ne retélécharge rien : les skills suivis sont copiés depuis le
+dossier existant, puis `add`, `update` et `delete` s'appliquent à chaque dossier.
+Seuls les sous-dossiers `skills/` sont gérés : `.claude/settings.json` et le
+reste de `.claude/` ne sont jamais touchés. Les skills ajoutés à la main restent
+en place, et un dossier de destination déjà présent interrompt la commande avant
+toute modification. L'état reste dans `.agents/skipack-state.json`.
 
 ## Cache GitHub
 

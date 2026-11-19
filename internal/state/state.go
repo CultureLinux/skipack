@@ -11,10 +11,14 @@ type Skill struct {
 	Name   string `json:"name"`
 	Source string `json:"source"`
 	Path   string `json:"path"`
+	// Agents lists where skipack installed this skill; empty means "codex" (legacy).
+	Agents []string `json:"agents,omitempty"`
 }
 type File struct {
-	Version int     `json:"version"`
-	Skills  []Skill `json:"skills"`
+	Version int `json:"version"`
+	// Agents lists the configured agents; empty means "codex" (legacy).
+	Agents []string `json:"agents,omitempty"`
+	Skills []Skill  `json:"skills"`
 }
 
 func path(root string) string { return filepath.Join(root, ".agents", "skipack-state.json") }
