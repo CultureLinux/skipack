@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -307,9 +309,9 @@ func TestClientRefreshesEachCachedResourceOnce(t *testing.T) {
 }
 
 func TestTokenIsSentToTheAPIHostOnly(t *testing.T) {
-	var got string
+	var got atomic.Value
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Get("Authorization")
+		got.Store(r.Header.Get("Authorization"))
 		fmt.Fprint(w, `{"default_branch":"main"}`)
 	}))
 	defer s.Close()
@@ -318,7 +320,7 @@ func TestTokenIsSentToTheAPIHostOnly(t *testing.T) {
 	if _, err := c.defaultBranch("acme", "repo"); err != nil {
 		t.Fatal(err)
 	}
-	if got != "Bearer secret" {
+	if got.Load() != "Bearer secret" {
 		t.Fatalf("Authorization = %q", got)
 	}
 	other, _ := url.Parse("https://codeload.github.com/x")
@@ -328,14 +330,15 @@ func TestTokenIsSentToTheAPIHostOnly(t *testing.T) {
 }
 
 func TestStaleCacheIsRefetchedButUsedWhenOffline(t *testing.T) {
-	body := "one"
-	fail := false
+	var body atomic.Value
+	body.Store("one")
+	var fail atomic.Bool
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if fail {
+		if fail.Load() {
 			http.Error(w, "boom", 500)
 			return
 		}
-		fmt.Fprint(w, body)
+		fmt.Fprint(w, body.Load())
 	}))
 	defer s.Close()
 	c := NewClient()
@@ -347,14 +350,14 @@ func TestStaleCacheIsRefetchedButUsedWhenOffline(t *testing.T) {
 	if err := os.Chtimes(c.cachePath(s.URL+"/x"), old, old); err != nil {
 		t.Fatal(err)
 	}
-	body = "two"
+	body.Store("two")
 	if b, _ := c.get(s.URL + "/x"); string(b) != "two" {
 		t.Fatalf("stale cache reused: %q", b)
 	}
 	if err := os.Chtimes(c.cachePath(s.URL+"/x"), old, old); err != nil {
 		t.Fatal(err)
 	}
-	fail = true
+	fail.Store(true)
 	if b, err := c.get(s.URL + "/x"); err != nil || string(b) != "two" {
 		t.Fatalf("offline fallback=%q %v", b, err)
 	}
@@ -399,9 +402,12 @@ func TestArchiveCommitReadsTheZipballFolderName(t *testing.T) {
 
 func TestFetchUsesPinnedRefAndRecordsCommit(t *testing.T) {
 	z := archive(map[string]string{"acme-repo-abcdef1/skills/x/SKILL.md": "ok"})
+	var mu sync.Mutex
 	var paths []string
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		paths = append(paths, r.URL.Path)
+		mu.Unlock()
 		w.Write(z)
 	}))
 	defer s.Close()

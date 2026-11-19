@@ -107,8 +107,8 @@ func TestFinishReplaceLogsFailureAndRemovesStagedFile(t *testing.T) {
 	dir := t.TempDir()
 	staged := filepath.Join(dir, "staged")
 	os.WriteFile(staged, []byte("new"), 0755)
-	if err := FinishReplace(filepath.Join(dir, "missing"), staged); err == nil {
-		t.Fatal("replacing a missing executable succeeded")
+	if err := FinishReplace(filepath.Join(dir, "no-such-dir", "skipack"), staged); err == nil {
+		t.Fatal("replacing into a missing directory succeeded")
 	}
 	if _, err := os.Stat(staged); err == nil {
 		t.Fatal("staged file remains after failure")

@@ -61,7 +61,12 @@ func stageCopy(src, parent, pattern string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = copyTree(src, tmp); err != nil {
+	// MkdirTemp creates 0700 folders on Unix; installed skills use 0755 like the
+	// ones extracted from an archive.
+	if err = os.Chmod(tmp, 0755); err == nil {
+		err = copyTree(src, tmp)
+	}
+	if err != nil {
 		os.RemoveAll(tmp)
 		return "", err
 	}
