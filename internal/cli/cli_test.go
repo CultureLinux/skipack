@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cyklodev/skipack/internal/config"
-	gh "github.com/cyklodev/skipack/internal/github"
-	"github.com/cyklodev/skipack/internal/install"
-	projectstate "github.com/cyklodev/skipack/internal/state"
+	"github.com/CultureLinux/skipack/internal/config"
+	gh "github.com/CultureLinux/skipack/internal/github"
+	"github.com/CultureLinux/skipack/internal/install"
+	projectstate "github.com/CultureLinux/skipack/internal/state"
 )
 
 type selfUpdateFunc func() error
@@ -159,6 +159,12 @@ func TestAddUnknownGroupReturnsFailure(t *testing.T) {
 }
 
 func TestAddAllInstallsSkillsFromEveryConfiguredGroup(t *testing.T) {
+	for _, flag := range []string{"all", "--all"} {
+		t.Run(flag, func(t *testing.T) { testAddAll(t, flag) })
+	}
+}
+
+func testAddAll(t *testing.T, flag string) {
 	d := t.TempDir()
 	cfg := filepath.Join(d, "skills.yaml")
 	if err := os.WriteFile(cfg, []byte("version: 1\ngroups:\n  reflex:\n    - source: acme/repo\n      skill: one\n  planning:\n    - source: acme/repo\n      skill: two\n"), 0644); err != nil {
@@ -170,7 +176,7 @@ func TestAddAllInstallsSkillsFromEveryConfiguredGroup(t *testing.T) {
 	}
 	var out, errs bytes.Buffer
 	a := App{Store: store, Root: d, Out: &out, Err: &errs, Fetcher: cliFetcher{}}
-	if code := a.Run([]string{"add", "all"}); code != 0 {
+	if code := a.Run([]string{"add", flag}); code != 0 {
 		t.Fatalf("code=%d error=%q", code, errs.String())
 	}
 	for _, name := range []string{"one", "two"} {

@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cyklodev/skipack/internal/config"
+	"github.com/CultureLinux/skipack/internal/config"
 )
 
 func archive(entries map[string]string) []byte {

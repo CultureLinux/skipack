@@ -19,8 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cyklodev/skipack/internal/config"
-	"github.com/cyklodev/skipack/internal/install"
+	"github.com/CultureLinux/skipack/internal/config"
+	"github.com/CultureLinux/skipack/internal/install"
 )
 
 const maxArchiveBytes int64 = 100 << 20

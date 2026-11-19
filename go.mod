@@ -1,4 +1,4 @@
-module github.com/cyklodev/skipack
+module github.com/CultureLinux/skipack
 
 go 1.23
 

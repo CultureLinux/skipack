@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cyklodev/skipack/internal/cli"
-	"github.com/cyklodev/skipack/internal/config"
+	"github.com/CultureLinux/skipack/internal/cli"
+	"github.com/CultureLinux/skipack/internal/config"
 )
 
 var version = "dev"

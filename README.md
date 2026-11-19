@@ -76,13 +76,13 @@ macOS peuvent télécharger `skipack-darwin-amd64` ou
 Avec Go 1.23 ou plus récent :
 
 ```console
-go install github.com/cyklodev/skipack/cmd/skipack@latest
+go install github.com/CultureLinux/skipack/cmd/skipack@latest
 ```
 
 Vous pouvez également construire le projet localement :
 
 ```console
-git clone https://github.com/cyklodev/skipack.git
+git clone https://github.com/CultureLinux/skipack.git
 cd skipack
 go build -o skipack ./cmd/skipack
 ```

@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/cyklodev/skipack/internal/config"
-	gh "github.com/cyklodev/skipack/internal/github"
-	"github.com/cyklodev/skipack/internal/install"
-	"github.com/cyklodev/skipack/internal/selfupdate"
+	"github.com/CultureLinux/skipack/internal/config"
+	gh "github.com/CultureLinux/skipack/internal/github"
+	"github.com/CultureLinux/skipack/internal/install"
+	"github.com/CultureLinux/skipack/internal/selfupdate"
 )
 
 type SelfUpdater interface {
@@ -210,7 +210,7 @@ func (a App) Run(args []string) int {
 			return a.fail("%v", err)
 		}
 		var skills []config.Skill
-		if len(args) == 2 && args[1] == "all" {
+		if len(args) == 2 && (args[1] == "all" || args[1] == "--all") {
 			names := make([]string, 0, len(cfg.Groups))
 			for name := range cfg.Groups {
 				names = append(names, name)

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cyklodev/skipack/internal/config"
-	projectstate "github.com/cyklodev/skipack/internal/state"
+	"github.com/CultureLinux/skipack/internal/config"
+	projectstate "github.com/CultureLinux/skipack/internal/state"
 )
 
 type fakeFetcher struct {
