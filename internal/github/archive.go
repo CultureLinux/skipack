@@ -14,9 +14,6 @@ import (
 const maxSkillBytes int64 = 50 << 20
 
 func ExtractSkillZip(data []byte, skillPath, dst string) error {
-	if int64(len(data)) > maxSkillBytes {
-		return errors.New("archive exceeds 50 MiB limit")
-	}
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
@@ -57,6 +54,9 @@ func ExtractSkillZip(data []byte, skillPath, dst string) error {
 		mode := f.Mode()
 		if mode&os.ModeSymlink != 0 || (!mode.IsRegular() && !mode.IsDir()) {
 			return fmt.Errorf("archive contains unsupported entry %q", f.Name)
+		}
+		if unsafeEntryName(rel) {
+			return fmt.Errorf("archive contains a path that is not portable to Windows: %q", f.Name)
 		}
 		if strings.Contains(rel, "\\") || filepath.IsAbs(rel) || strings.HasPrefix(rel, "../") || strings.Contains(rel, "/../") {
 			return errors.New("archive contains unsafe path")
@@ -113,4 +113,37 @@ func ExtractSkillZip(data []byte, skillPath, dst string) error {
 		}
 	}
 	return nil
+}
+
+var windowsReserved = map[string]bool{"CON": true, "PRN": true, "AUX": true, "NUL": true}
+
+// unsafeEntryName rejects names that mean something special on Windows
+// (alternate data streams, device names, trailing dots or spaces), whatever
+// the current operating system, so a skill installs the same way everywhere.
+func unsafeEntryName(rel string) bool {
+	for _, part := range strings.Split(rel, "/") {
+		if part == "" {
+			continue
+		}
+		if strings.ContainsAny(part, ":<>\"|?*") || strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") {
+			return true
+		}
+		for _, r := range part {
+			if r < 0x20 {
+				return true
+			}
+		}
+		stem := strings.ToUpper(part)
+		if i := strings.Index(stem, "."); i >= 0 {
+			stem = stem[:i]
+		}
+		stem = strings.TrimRight(stem, " ")
+		if windowsReserved[stem] {
+			return true
+		}
+		if len(stem) == 4 && (strings.HasPrefix(stem, "COM") || strings.HasPrefix(stem, "LPT")) && stem[3] >= '1' && stem[3] <= '9' {
+			return true
+		}
+	}
+	return false
 }

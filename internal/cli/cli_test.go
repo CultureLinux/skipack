@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -399,5 +400,77 @@ func TestAgentSetCopiesSkillsAndShowPrintsAgents(t *testing.T) {
 	}
 	if code := a.Run([]string{"agent", "set", "gemini"}); code != 1 {
 		t.Fatalf("unknown agent code=%d", code)
+	}
+}
+
+type failSecondFetcher struct{ calls int }
+
+func (f *failSecondFetcher) Fetch(s config.Skill, dst string) (install.Origin, error) {
+	f.calls++
+	if f.calls == 2 {
+		return install.Origin{}, errors.New("network down")
+	}
+	return cliFetcher{}.Fetch(s, dst)
+}
+
+func TestAddPrintsSkillsInstalledBeforeAFailure(t *testing.T) {
+	d := t.TempDir()
+	cfg := filepath.Join(d, "skills.yaml")
+	os.WriteFile(cfg, []byte("version: 1\ngroups:\n  g:\n    - source: acme/repo\n      skill: one\n    - source: acme/repo\n      skill: two\n"), 0644)
+	store := config.Store{Path: filepath.Join(d, "config.json")}
+	if err := store.Set(cfg); err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	a := App{Store: store, Root: d, Out: &out, Err: &errs, Fetcher: &failSecondFetcher{}}
+	if code := a.Run([]string{"add", "g"}); code != 1 {
+		t.Fatalf("code=%d", code)
+	}
+	if !strings.Contains(out.String(), "installed one") {
+		t.Fatalf("partial result hidden: out=%q err=%q", out.String(), errs.String())
+	}
+}
+
+func TestUpdateDryRunListsChangesWithoutApplyingThem(t *testing.T) {
+	d := t.TempDir()
+	dir := filepath.Join(d, ".agents", "skills", "one")
+	os.MkdirAll(dir, 0755)
+	os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("old"), 0644)
+	if err := projectstate.Save(d, projectstate.File{Version: 1, Skills: []projectstate.Skill{{Name: "one", Source: "a/r", Path: "skills/one", Commit: "1111111aaaa"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var out, errs bytes.Buffer
+	a := App{Store: config.Store{Path: filepath.Join(d, "none.json")}, Root: d, Out: &out, Err: &errs, Fetcher: cliFetcher{}}
+	if code := a.Run([]string{"update", "--dry-run"}); code != 0 {
+		t.Fatalf("code=%d err=%q", code, errs.String())
+	}
+	if !strings.Contains(out.String(), "would update one (1111111 -> unknown)") {
+		t.Fatalf("out=%q", out.String())
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "SKILL.md"))
+	if string(b) != "old" {
+		t.Fatal("dry run changed the skill")
+	}
+}
+
+func TestBareAllMeansEveryGroupUnlessAGroupIsNamedAll(t *testing.T) {
+	cfg, err := config.Parse([]byte("version: 1\ngroups:\n  a:\n    - source: x/y\n      skill: one\n  b:\n    - source: x/y\n      skill: two\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"all", "--all"} {
+		if s, err := selectSkills(cfg, []string{name}); err != nil || len(s) != 2 {
+			t.Fatalf("%s -> %v %v", name, s, err)
+		}
+	}
+	cfg.Groups["all"] = []config.Skill{{Source: "x/y", Skill: "only"}}
+	if s, _ := selectSkills(cfg, []string{"all"}); len(s) != 1 || s[0].Skill != "only" {
+		t.Fatalf("group named all ignored: %v", s)
+	}
+	if s, _ := selectSkills(cfg, []string{"--all"}); len(s) != 3 {
+		t.Fatalf("--all must still select every group: %v", s)
+	}
+	if _, err := selectSkills(cfg, []string{"missing"}); err == nil {
+		t.Fatal("unknown group accepted")
 	}
 }

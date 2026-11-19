@@ -113,3 +113,27 @@ func TestExtractSkillRejectsOversizedExpandedContent(t *testing.T) {
 		t.Fatal("oversized expanded content accepted")
 	}
 }
+
+func TestExtractRejectsNamesThatAreSpecialOnWindows(t *testing.T) {
+	for _, name := range []string{"SKILL.md::$DATA", "con.txt", "NUL", "dir/COM1.md", "a/b.", "a/b ", "x<y", "LPT9"} {
+		z := archive(map[string]string{"repo-sha/skills/x/SKILL.md": "ok", "repo-sha/skills/x/" + name: "bad"})
+		if err := ExtractSkillZip(z, "skills/x", t.TempDir()+"/out"); err == nil {
+			t.Fatalf("%q was accepted", name)
+		}
+	}
+}
+
+func TestExtractAcceptsOrdinaryNamesIncludingDotfiles(t *testing.T) {
+	z := archive(map[string]string{"repo-sha/skills/x/SKILL.md": "ok", "repo-sha/skills/x/.hidden": "1", "repo-sha/skills/x/console.md": "2", "repo-sha/skills/x/refs/guide.md": "3"})
+	if err := ExtractSkillZip(z, "skills/x", t.TempDir()+"/out"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestExtractIgnoresSizeOfTheRestOfTheRepository(t *testing.T) {
+	big := strings.Repeat("x", int(maxSkillBytes)+1)
+	z := archive(map[string]string{"repo-sha/skills/x/SKILL.md": "ok", "repo-sha/assets/huge.bin": big})
+	if err := ExtractSkillZip(z, "skills/x", t.TempDir()+"/out"); err != nil {
+		t.Fatalf("large unrelated files must not block the skill: %v", err)
+	}
+}

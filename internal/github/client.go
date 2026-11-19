@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -23,15 +24,22 @@ import (
 	"github.com/CultureLinux/skipack/internal/install"
 )
 
-const maxArchiveBytes int64 = 100 << 20
+// maxArchiveBytes bounds a whole repository archive; the skill itself is limited
+// separately (maxSkillBytes) once extracted.
+const maxArchiveBytes int64 = 200 << 20
+
+// cacheTTL is how long a cached response is reused before GitHub is asked again.
+const cacheTTL = 24 * time.Hour
 
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 type Client struct {
-	HTTP      *http.Client
-	APIBase   string
-	CacheDir  string
-	Refresh   bool
+	HTTP     *http.Client
+	APIBase  string
+	CacheDir string
+	Refresh  bool
+	// Token is sent only to the host of APIBase (GITHUB_TOKEN or GH_TOKEN).
+	Token     string
 	refreshed map[string]bool
 }
 
@@ -49,16 +57,22 @@ func NewClient() *Client {
 	if userDir, err := os.UserConfigDir(); err == nil {
 		cacheDir = filepath.Join(userDir, "skipack", "cache")
 	}
-	return &Client{HTTP: h, APIBase: "https://api.github.com", CacheDir: cacheDir, refreshed: map[string]bool{}}
+	return &Client{HTTP: h, APIBase: "https://api.github.com", CacheDir: cacheDir, Token: tokenFromEnv(), refreshed: map[string]bool{}}
 }
 
 func (c *Client) get(raw string) ([]byte, error) {
 	cachePath := c.cachePath(raw)
+	var stale []byte
 	if cachePath != "" {
 		alreadyRefreshed := c.Refresh && c.refreshed[cachePath]
 		if !c.Refresh || alreadyRefreshed {
-			if b, err := os.ReadFile(cachePath); err == nil && len(b) > 0 {
-				return b, nil
+			b, err := os.ReadFile(cachePath)
+			if err == nil && len(b) > 0 {
+				if info, statErr := os.Stat(cachePath); statErr == nil && time.Since(info.ModTime()) > cacheTTL && !alreadyRefreshed {
+					stale = b
+				} else {
+					return b, nil
+				}
 			} else if err != nil && !os.IsNotExist(err) {
 				return nil, fmt.Errorf("read GitHub cache: %w", err)
 			}
@@ -66,6 +80,9 @@ func (c *Client) get(raw string) ([]byte, error) {
 	}
 	b, err := c.getNetwork(raw)
 	if err != nil {
+		if stale != nil {
+			return stale, nil
+		}
 		return nil, err
 	}
 	if cachePath != "" {
@@ -89,6 +106,9 @@ func (c *Client) getNetwork(raw string) ([]byte, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "skipack/1")
+	if c.Token != "" && c.tokenAllowed(req.URL) {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -102,7 +122,7 @@ func (c *Client) getNetwork(raw string) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(b)) > maxArchiveBytes {
-		return nil, errors.New("download exceeds 100 MiB limit")
+		return nil, fmt.Errorf("repository archive exceeds the %d MiB download limit", maxArchiveBytes>>20)
 	}
 	return b, nil
 }
@@ -201,13 +221,13 @@ func (c *Client) Fetch(spec config.Skill, dst string) (install.Origin, error) {
 		if err = ExtractSkillZip(data, path, dst); err != nil {
 			return install.Origin{}, err
 		}
-		return install.Origin{Source: spec.Source, Path: path}, nil
+		return install.Origin{Source: spec.Source, Commit: archiveCommit(data), Path: path}, nil
 	}
 	if !repoPattern.MatchString(spec.Source) || spec.Skill == "" {
 		return install.Origin{}, errors.New("short source must be owner/repo with a skill name")
 	}
 	p := strings.Split(spec.Source, "/")
-	ref, err := c.defaultBranch(p[0], p[1])
+	ref, err := c.resolveRef(p[0], p[1], spec)
 	if err != nil {
 		return install.Origin{}, err
 	}
@@ -219,7 +239,7 @@ func (c *Client) Fetch(spec config.Skill, dst string) (install.Origin, error) {
 		if err = ExtractSkillZip(data, spec.Path, dst); err != nil {
 			return install.Origin{}, err
 		}
-		return install.Origin{Source: spec.Source, Path: spec.Path}, nil
+		return install.Origin{Source: spec.Source, Commit: archiveCommit(data), Path: spec.Path}, nil
 	}
 	candidates := []string{"skills/" + spec.Skill, ".agents/skills/" + spec.Skill, ".claude/skills/" + spec.Skill, spec.Skill}
 	valid := validCandidates(data, candidates)
@@ -232,7 +252,7 @@ func (c *Client) Fetch(spec config.Skill, dst string) (install.Origin, error) {
 	if err = ExtractSkillZip(data, valid[0], dst); err != nil {
 		return install.Origin{}, err
 	}
-	return install.Origin{Source: spec.Source, Path: valid[0]}, nil
+	return install.Origin{Source: spec.Source, Commit: archiveCommit(data), Path: valid[0]}, nil
 }
 
 // Audit verifies that a configured skill still resolves to a non-empty UTF-8
@@ -260,7 +280,7 @@ func (c *Client) Audit(spec config.Skill) (install.Origin, error) {
 		parts := strings.Split(spec.Source, "/")
 		var err error
 		owner, repo = parts[0], parts[1]
-		ref, err = c.defaultBranch(owner, repo)
+		ref, err = c.resolveRef(owner, repo, spec)
 		if err != nil {
 			return install.Origin{}, err
 		}
@@ -284,7 +304,7 @@ func (c *Client) Audit(spec config.Skill) (install.Origin, error) {
 	if err := validateSkillFile(data, path); err != nil {
 		return install.Origin{}, err
 	}
-	return install.Origin{Source: spec.Source, Path: path}, nil
+	return install.Origin{Source: spec.Source, Commit: archiveCommit(data), Path: path}, nil
 }
 
 func validateSkillFile(data []byte, path string) error {
@@ -388,4 +408,98 @@ func (c *Client) ReadConfigURL(raw string) ([]byte, error) {
 		return nil, errors.New("configuration exceeds 1 MiB limit")
 	}
 	return decoded, nil
+}
+
+func tokenFromEnv() string {
+	if t := os.Getenv("GITHUB_TOKEN"); t != "" {
+		return t
+	}
+	return os.Getenv("GH_TOKEN")
+}
+
+// tokenAllowed keeps the token away from any host but the API one. Go also drops
+// the Authorization header when a request is redirected to another host.
+func (c *Client) tokenAllowed(u *url.URL) bool {
+	api, err := url.Parse(c.APIBase)
+	return err == nil && strings.EqualFold(u.Host, api.Host)
+}
+
+// PruneCache removes cache files older than maxAge, then the oldest ones until
+// the cache fits in maxBytes.
+func (c *Client) PruneCache(maxAge time.Duration, maxBytes int64) error {
+	if c.CacheDir == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(c.CacheDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	type file struct {
+		path string
+		size int64
+		mod  time.Time
+	}
+	var files []file
+	var total int64
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".cache") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		p := filepath.Join(c.CacheDir, e.Name())
+		if time.Since(info.ModTime()) > maxAge {
+			_ = os.Remove(p)
+			continue
+		}
+		files = append(files, file{p, info.Size(), info.ModTime()})
+		total += info.Size()
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod.Before(files[j].mod) })
+	for _, f := range files {
+		if total <= maxBytes {
+			break
+		}
+		if os.Remove(f.path) == nil {
+			total -= f.size
+		}
+	}
+	return nil
+}
+
+// resolveRef returns the pinned ref of a short source, or the default branch.
+func (c *Client) resolveRef(owner, repo string, spec config.Skill) (string, error) {
+	if spec.Ref != "" {
+		return spec.Ref, nil
+	}
+	return c.defaultBranch(owner, repo)
+}
+
+// archiveCommit reads the commit from the top folder GitHub puts in a zipball
+// ("owner-repo-<sha>/"). It returns "" when the name has no hexadecimal suffix.
+func archiveCommit(data []byte) string {
+	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil || len(r.File) == 0 {
+		return ""
+	}
+	top := strings.SplitN(filepathSlash(r.File[0].Name), "/", 2)[0]
+	i := strings.LastIndex(top, "-")
+	if i < 0 {
+		return ""
+	}
+	sha := top[i+1:]
+	if len(sha) < 7 || len(sha) > 40 {
+		return ""
+	}
+	for _, c := range sha {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return ""
+		}
+	}
+	return sha
 }

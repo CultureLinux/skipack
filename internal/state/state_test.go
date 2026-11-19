@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestSaveUsesUTF8AndRoundTripsAccents(t *testing.T) {
@@ -26,4 +27,39 @@ func TestSaveUsesUTF8AndRoundTripsAccents(t *testing.T) {
 	if got.Skills[0].Name != "qualité" {
 		t.Fatalf("got %#v", got)
 	}
+}
+
+func TestLockIsExclusiveAndReleasable(t *testing.T) {
+	root := t.TempDir()
+	unlock, err := Lock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Lock(root); err == nil {
+		t.Fatal("second lock succeeded while the first was held")
+	}
+	unlock()
+	unlock2, err := Lock(root)
+	if err != nil {
+		t.Fatalf("lock not released: %v", err)
+	}
+	unlock2()
+}
+
+func TestLockReplacesStaleLock(t *testing.T) {
+	root := t.TempDir()
+	unlock, err := Lock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(root, ".agents", "skipack.lock"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	unlock2, err := Lock(root)
+	if err != nil {
+		t.Fatalf("stale lock was not replaced: %v", err)
+	}
+	unlock2()
+	_ = unlock
 }

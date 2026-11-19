@@ -413,3 +413,159 @@ func TestAddUpdateDeleteApplyToEveryAgent(t *testing.T) {
 		}
 	}
 }
+
+func TestUnknownAgentInStateIsRejectedBeforeAnyWrite(t *testing.T) {
+	root := t.TempDir()
+	if err := projectstate.Save(root, projectstate.File{Version: 1, Agents: []string{"gemini"}}); err != nil {
+		t.Fatal(err)
+	}
+	m := Manager{Root: root, Fetcher: noFetch{t}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err == nil {
+		t.Fatal("unknown agent accepted")
+	}
+	if _, err := os.Stat(filepath.Join(root, "skills")); !os.IsNotExist(err) {
+		t.Fatal("skills were written outside the agent folders")
+	}
+}
+
+func TestSecondProcessIsRefusedWhileProjectIsLocked(t *testing.T) {
+	root := t.TempDir()
+	unlock, err := projectstate.Lock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if _, err := (Manager{Root: root, Fetcher: noFetch{t}}).Add(nil); err == nil {
+		t.Fatal("Add ran while the project was locked")
+	}
+}
+
+func TestRecoverRestoresBackupOfTrackedSkillAfterCrash(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "body"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, ".agents", "skills")
+	// Simulated crash during update: folder moved to backup, stage left behind.
+	if err := os.Rename(filepath.Join(dir, "one"), filepath.Join(dir, "one.skipack-backup")); err != nil {
+		t.Fatal(err)
+	}
+	os.MkdirAll(filepath.Join(dir, ".skipack-update-123"), 0755)
+	if _, err := m.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, dir, "one", "SKILL.md") != "body" {
+		t.Fatal("tracked skill was not restored")
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Fatalf("leftovers remain: %v", entries)
+	}
+}
+
+func TestRecoverDropsBackupWhenFolderExists(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "new"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, ".agents", "skills")
+	os.MkdirAll(filepath.Join(dir, "one.skipack-backup"), 0755)
+	if _, err := m.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "one.skipack-backup")); !os.IsNotExist(err) {
+		t.Fatal("stale backup remains")
+	}
+	if readFile(t, dir, "one", "SKILL.md") != "new" {
+		t.Fatal("current folder changed")
+	}
+}
+
+func TestRecoverPutsBackDeletedSkillStillTracked(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: fakeFetcher{bodies: map[string]string{"one": "body"}}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(root, ".agents", ".skipack-delete-1", "codex")
+	os.MkdirAll(backup, 0755)
+	if err := os.Rename(filepath.Join(root, ".agents", "skills", "one"), filepath.Join(backup, "one")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, root, ".agents", "skills", "one", "SKILL.md") != "body" {
+		t.Fatal("interrupted delete was not rolled back")
+	}
+	if _, err := os.Stat(filepath.Join(root, ".agents", ".skipack-delete-1")); !os.IsNotExist(err) {
+		t.Fatal("backup root remains")
+	}
+}
+
+type commitFetcher struct{ body, commit string }
+
+func (f commitFetcher) Fetch(s config.Skill, dst string) (Origin, error) {
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		return Origin{}, err
+	}
+	if err := os.WriteFile(filepath.Join(dst, "SKILL.md"), []byte(f.body), 0644); err != nil {
+		return Origin{}, err
+	}
+	return Origin{Source: s.Source, Path: "skills/" + s.Skill, Commit: f.commit}, nil
+}
+
+func TestAddRecordsCommitAndRefAndUpdateReportsTheChange(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: commitFetcher{"old", "aaaaaaa"}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one", Ref: "v1"}}); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := LoadState(root)
+	if st.Skills[0].Commit != "aaaaaaa" || st.Skills[0].Ref != "v1" {
+		t.Fatalf("state=%#v", st.Skills[0])
+	}
+	m.Fetcher = commitFetcher{"new", "bbbbbbb"}
+	m.DryRun = true
+	r, err := m.Update()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Changes) != 1 || r.Changes[0] != (Change{"one", "aaaaaaa", "bbbbbbb"}) {
+		t.Fatalf("changes=%v", r.Changes)
+	}
+	if readFile(t, root, ".agents", "skills", "one", "SKILL.md") != "old" {
+		t.Fatal("dry run modified files")
+	}
+	if st2, _ := LoadState(root); st2.Skills[0].Commit != "aaaaaaa" {
+		t.Fatal("dry run modified the state")
+	}
+	m.DryRun = false
+	if _, err := m.Update(); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, root, ".agents", "skills", "one", "SKILL.md") != "new" {
+		t.Fatal("update did not apply")
+	}
+	if st3, _ := LoadState(root); st3.Skills[0].Commit != "bbbbbbb" {
+		t.Fatalf("commit not updated: %#v", st3.Skills[0])
+	}
+}
+
+func TestUpdateFillsMissingCommitWithoutTouchingFiles(t *testing.T) {
+	root := t.TempDir()
+	m := Manager{Root: root, Fetcher: commitFetcher{"same", ""}}
+	if _, err := m.Add([]config.Skill{{Source: "a/r", Skill: "one"}}); err != nil {
+		t.Fatal(err)
+	}
+	m.Fetcher = commitFetcher{"same", "ccccccc"}
+	r, err := m.Update()
+	if err != nil || len(r.Changes) != 0 {
+		t.Fatalf("changes=%v err=%v", r.Changes, err)
+	}
+	if st, _ := LoadState(root); st.Skills[0].Commit != "ccccccc" {
+		t.Fatalf("commit not recorded: %#v", st.Skills[0])
+	}
+}

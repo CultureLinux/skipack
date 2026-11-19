@@ -100,7 +100,7 @@ func Replace(target, staged string) error {
 	}
 	backup := target + ".skipack-backup"
 	_ = os.Remove(backup)
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(replaceTimeout)
 	for {
 		if err := os.Rename(target, backup); err == nil {
 			if err = os.Rename(staged, target); err == nil {
@@ -190,8 +190,67 @@ func (u Updater) replacer() func(string, string) error {
 	return scheduleWindowsReplacement
 }
 
+const helperPrefix = "skipack-self-update-helper-"
+
+// replaceTimeout is how long the Windows helper waits for skipack to exit.
+var replaceTimeout = 30 * time.Second
+
+// Deferred reports whether Update only schedules the replacement, which then
+// happens after the current process exits (Windows).
+func (u Updater) Deferred() bool { return u.Replace == nil && runtime.GOOS == "windows" }
+
+// LogPath is where a failed deferred replacement is reported.
+func LogPath() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "skipack", "self-update.log")
+}
+
+func appendLog(message string) {
+	path := LogPath()
+	if path == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), message)
+}
+
+// FinishReplace is what the helper process runs: it swaps the executables,
+// records a failure in the log (nobody is watching this process), and removes
+// the helper copy of itself.
+func FinishReplace(target, staged string) error {
+	err := Replace(target, staged)
+	if err != nil {
+		appendLog(fmt.Sprintf("replace %s: %v", target, err))
+		_ = os.Remove(staged)
+	}
+	removeSelfLater()
+	return err
+}
+
+// removeSelfLater deletes the running helper once it has exited. It only ever
+// targets files created by scheduleWindowsReplacement.
+func removeSelfLater() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	self, err := os.Executable()
+	if err != nil || !strings.HasPrefix(filepath.Base(self), helperPrefix) {
+		return
+	}
+	_ = exec.Command("cmd", "/c", `ping -n 3 127.0.0.1 >NUL & del /f /q "`+self+`"`).Start()
+}
+
 func scheduleWindowsReplacement(target, staged string) error {
-	helper := filepath.Join(os.TempDir(), "skipack-self-update-helper.exe")
 	current, err := os.Executable()
 	if err != nil {
 		return err
@@ -200,8 +259,22 @@ func scheduleWindowsReplacement(target, staged string) error {
 	if err != nil {
 		return err
 	}
-	if err = os.WriteFile(helper, data, 0700); err != nil {
+	tmp, err := os.CreateTemp("", helperPrefix+"*.exe")
+	if err != nil {
 		return err
 	}
-	return exec.Command(helper, "self-update", "--replace", target, staged).Start()
+	helper := tmp.Name()
+	_, err = tmp.Write(data)
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(helper)
+		return err
+	}
+	if err = exec.Command(helper, "self-update", "--replace", target, staged).Start(); err != nil {
+		_ = os.Remove(helper)
+		return err
+	}
+	return nil
 }

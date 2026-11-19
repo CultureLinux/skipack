@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -302,5 +303,123 @@ func TestClientRefreshesEachCachedResourceOnce(t *testing.T) {
 	}
 	if string(b) != "new" {
 		t.Fatalf("refreshed content = %q", b)
+	}
+}
+
+func TestTokenIsSentToTheAPIHostOnly(t *testing.T) {
+	var got string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+		fmt.Fprint(w, `{"default_branch":"main"}`)
+	}))
+	defer s.Close()
+	c := NewClient()
+	c.APIBase, c.HTTP, c.CacheDir, c.Token = s.URL, s.Client(), t.TempDir(), "secret"
+	if _, err := c.defaultBranch("acme", "repo"); err != nil {
+		t.Fatal(err)
+	}
+	if got != "Bearer secret" {
+		t.Fatalf("Authorization = %q", got)
+	}
+	other, _ := url.Parse("https://codeload.github.com/x")
+	if c.tokenAllowed(other) {
+		t.Fatal("token allowed for another host")
+	}
+}
+
+func TestStaleCacheIsRefetchedButUsedWhenOffline(t *testing.T) {
+	body := "one"
+	fail := false
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail {
+			http.Error(w, "boom", 500)
+			return
+		}
+		fmt.Fprint(w, body)
+	}))
+	defer s.Close()
+	c := NewClient()
+	c.HTTP, c.CacheDir = s.Client(), t.TempDir()
+	if b, err := c.get(s.URL + "/x"); err != nil || string(b) != "one" {
+		t.Fatalf("first=%q %v", b, err)
+	}
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(c.cachePath(s.URL+"/x"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	body = "two"
+	if b, _ := c.get(s.URL + "/x"); string(b) != "two" {
+		t.Fatalf("stale cache reused: %q", b)
+	}
+	if err := os.Chtimes(c.cachePath(s.URL+"/x"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	fail = true
+	if b, err := c.get(s.URL + "/x"); err != nil || string(b) != "two" {
+		t.Fatalf("offline fallback=%q %v", b, err)
+	}
+}
+
+func TestPruneCacheDropsOldFilesThenOldestOverTheLimit(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, size int, age time.Duration) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, make([]byte, size), 0600); err != nil {
+			t.Fatal(err)
+		}
+		mod := time.Now().Add(-age)
+		os.Chtimes(p, mod, mod)
+		return p
+	}
+	expired := write("a.cache", 10, 40*24*time.Hour)
+	oldest := write("b.cache", 100, 3*time.Hour)
+	newest := write("c.cache", 100, time.Hour)
+	other := write("keep.txt", 1000, 99*24*time.Hour)
+	c := &Client{CacheDir: dir}
+	if err := c.PruneCache(30*24*time.Hour, 150); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]bool{expired: false, oldest: false, newest: true, other: true} {
+		if _, err := os.Stat(p); (err == nil) != want {
+			t.Fatalf("%s exists=%v want %v", filepath.Base(p), err == nil, want)
+		}
+	}
+}
+
+func TestArchiveCommitReadsTheZipballFolderName(t *testing.T) {
+	if got := archiveCommit(archive(map[string]string{"acme-repo-0a1b2c3d/skills/x/SKILL.md": "x"})); got != "0a1b2c3d" {
+		t.Fatalf("commit=%q", got)
+	}
+	for _, name := range []string{"repo/skills/x/SKILL.md", "acme-repo-nothex1/x", "acme-repo-abc/x"} {
+		if got := archiveCommit(archive(map[string]string{name: "x"})); got != "" {
+			t.Fatalf("%s -> %q", name, got)
+		}
+	}
+}
+
+func TestFetchUsesPinnedRefAndRecordsCommit(t *testing.T) {
+	z := archive(map[string]string{"acme-repo-abcdef1/skills/x/SKILL.md": "ok"})
+	var paths []string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Write(z)
+	}))
+	defer s.Close()
+	c := NewClient()
+	c.APIBase, c.HTTP, c.CacheDir = s.URL, s.Client(), t.TempDir()
+	o, err := c.Fetch(config.Skill{Source: "acme/repo", Skill: "x", Ref: "v1.0.0"}, t.TempDir()+"/out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Commit != "abcdef1" {
+		t.Fatalf("commit=%q", o.Commit)
+	}
+	for _, p := range paths {
+		if strings.HasSuffix(p, "/repos/acme/repo") {
+			t.Fatalf("default branch was queried despite ref: %v", paths)
+		}
+	}
+	if !strings.HasSuffix(paths[len(paths)-1], "/zipball/v1.0.0") {
+		t.Fatalf("paths=%v", paths)
 	}
 }

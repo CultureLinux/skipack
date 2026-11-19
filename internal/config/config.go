@@ -7,15 +7,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
 
+var refPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
+
 type Skill struct {
 	Source string `yaml:"source"`
 	Skill  string `yaml:"skill,omitempty"`
-	Path   string `yaml:"-"`
+	// Ref pins a short source to a branch, tag or commit; empty means the default branch.
+	Ref  string `yaml:"ref,omitempty"`
+	Path string `yaml:"-"`
 }
 type Config struct {
 	Version int                `yaml:"version"`
@@ -46,6 +52,14 @@ func Parse(data []byte) (Config, error) {
 		for i, skill := range skills {
 			if skill.Source == "" {
 				return c, fmt.Errorf("group %q item %d has no source", group, i+1)
+			}
+			if skill.Ref != "" {
+				if strings.HasPrefix(skill.Source, "https://") {
+					return c, fmt.Errorf("group %q item %d: ref is only allowed with an owner/repository source", group, i+1)
+				}
+				if !refPattern.MatchString(skill.Ref) {
+					return c, fmt.Errorf("group %q item %d has an invalid ref %q", group, i+1, skill.Ref)
+				}
 			}
 		}
 	}

@@ -26,5 +26,6 @@ go.work.sum
 
 # Local skipack installation state
 /.agents
+/.claude
 /docs
 CLAUDE.md
