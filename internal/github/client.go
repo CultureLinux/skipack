@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -115,7 +116,7 @@ func (c *Client) getNetwork(raw string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GitHub returned %s", resp.Status)
+		return nil, statusError(resp)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxArchiveBytes+1))
 	if err != nil {
@@ -502,4 +503,19 @@ func archiveCommit(data []byte) string {
 		}
 	}
 	return sha
+}
+
+// statusError explains a failed response. A 403 or 429 with no request left is
+// the GitHub rate limit, which has its own fix (a token), so say so.
+func statusError(resp *http.Response) error {
+	limited := (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) &&
+		resp.Header.Get("X-RateLimit-Remaining") == "0"
+	if !limited {
+		return fmt.Errorf("GitHub returned %s", resp.Status)
+	}
+	msg := "GitHub API rate limit reached"
+	if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+		msg += " (resets at " + time.Unix(reset, 0).Format("15:04") + ")"
+	}
+	return errors.New(msg + "; already downloaded files are cached, so retry later, or set GITHUB_TOKEN to raise the limit from 60 to 5000 requests per hour")
 }

@@ -240,7 +240,8 @@ pour augmenter la limite de requêtes de GitHub.
 
 Sans authentification, l’API GitHub accepte 60 requêtes par heure et par adresse
 IP. Une configuration avec beaucoup de skills peut atteindre cette limite
-(erreur `403`). Avec un jeton, la limite passe à 5000 requêtes par heure.
+(message `GitHub API rate limit reached`, avec l’heure de remise à zéro). Avec un
+jeton, la limite passe à 5000 requêtes par heure.
 
 `skipack` lit le jeton dans **une variable d’environnement du processus** :
 
@@ -251,6 +252,40 @@ Il ne lit **pas** de fichier `.env`, ni dans le projet ni ailleurs. Mettre le
 jeton dans un `.env` n’a donc aucun effet sur skipack (et ne le commitez jamais).
 Aucune permission n’est nécessaire pour lire des dépôts publics : un jeton sans
 scope (classique) ou sans accès particulier (fine-grained) suffit.
+
+### Obtenir un jeton
+
+Deux solutions, au choix.
+
+**1. Créer un jeton sur GitHub** (compte GitHub requis) :
+
+1. Connectez-vous à GitHub, puis ouvrez
+   <https://github.com/settings/personal-access-tokens/new>
+   (*Settings → Developer settings → Personal access tokens → Fine-grained tokens
+   → Generate new token*).
+2. Donnez-lui un nom (par exemple `skipack`) et une date d’expiration (30 à 90
+   jours est raisonnable).
+3. Dans *Repository access*, choisissez **Public repositories (read-only)**.
+4. Ne cochez **aucune permission** : skipack ne lit que des dépôts publics.
+5. Cliquez sur *Generate token* et copiez la valeur affichée (elle commence par
+   `github_pat_`). GitHub ne la montre qu’une seule fois : si vous la perdez,
+   générez-en un autre.
+
+Un jeton classique fonctionne aussi
+(<https://github.com/settings/tokens>, *Generate new token (classic)*, sans cocher
+aucun scope ; la valeur commence par `ghp_`), mais le jeton fine-grained est
+préférable car il ne donne accès à rien de privé. Les intitulés de l’interface
+GitHub peuvent évoluer.
+
+**2. Réutiliser GitHub CLI** si `gh` est installé : après `gh auth login`,
+`gh auth token` affiche le jeton de votre session. Il a généralement plus de
+droits que nécessaire : préférez un jeton dédié si vous le conservez.
+
+Traitez le jeton comme un mot de passe : ne le collez pas dans un fichier
+versionné, un ticket ou une capture d’écran. S’il fuite, révoquez-le dans les
+réglages GitHub et créez-en un nouveau.
+
+### Fournir le jeton à skipack
 
 Pour la session courante :
 

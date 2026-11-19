@@ -429,3 +429,25 @@ func TestFetchUsesPinnedRefAndRecordsCommit(t *testing.T) {
 		t.Fatalf("paths=%v", paths)
 	}
 }
+
+func TestRateLimitErrorExplainsTheTokenFix(t *testing.T) {
+	reset := time.Now().Add(10 * time.Minute).Unix()
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/limited" {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("X-RateLimit-Reset", fmt.Sprint(reset))
+		}
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer s.Close()
+	c := NewClient()
+	c.HTTP, c.CacheDir = s.Client(), t.TempDir()
+	_, err := c.get(s.URL + "/limited")
+	if err == nil || !strings.Contains(err.Error(), "rate limit") || !strings.Contains(err.Error(), "GITHUB_TOKEN") || !strings.Contains(err.Error(), "resets at") {
+		t.Fatalf("err=%v", err)
+	}
+	_, err = c.get(s.URL + "/other")
+	if err == nil || strings.Contains(err.Error(), "rate limit") {
+		t.Fatalf("plain 403 mislabelled as rate limit: %v", err)
+	}
+}
